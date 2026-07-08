@@ -99,7 +99,6 @@ import { useLabels } from "@/hooks/useLabels"
 import { useViews } from "@/hooks/useViews"
 import { useContainerWidth } from "@/hooks/useContainerWidth"
 import { LabelIcon, LabelValueTypeIcon } from "@/components/ui/label-icon"
-import { filterSessionStatuses as filterLabelMenuStates } from "@/components/ui/label-menu"
 import { createLabelMenuItems, filterItems as filterLabelMenuItems, type LabelMenuItem } from "@/components/ui/label-menu-utils"
 import { buildLabelTree, getDescendantIds, getLabelDisplayName, flattenLabels, extractLabelId, findLabelById, sortLabelsForDisplay } from "@craft-agent/shared/labels"
 import type { LabelConfig, LabelTreeNode } from "@craft-agent/shared/labels"
@@ -685,12 +684,9 @@ function AppShellContent({
     return saved
   })
 
-  // Derive current view's status filter as a Map<SessionStatusId, FilterMode>
-  const listFilter = useMemo(() => {
-    if (!sessionFilterKey) return new Map<SessionStatusId, FilterMode>()
-    const entry = viewFiltersMap[sessionFilterKey]?.statuses ?? {}
-    return new Map<SessionStatusId, FilterMode>(Object.entries(entry) as [SessionStatusId, FilterMode][])
-  }, [viewFiltersMap, sessionFilterKey])
+  // Status filters are no longer user-facing in this fork. Keep a stable empty map so
+  // legacy stored status filters do not invisibly hide sessions. State routes still work via sessionFilter.kind === 'state'.
+  const listFilter = useMemo(() => new Map<SessionStatusId, FilterMode>(), [])
 
   // Derive current view's label filter as a Map<string, FilterMode>
   const labelFilter = useMemo(() => {
@@ -698,19 +694,6 @@ function AppShellContent({
     const entry = viewFiltersMap[sessionFilterKey]?.labels ?? {}
     return new Map<string, FilterMode>(Object.entries(entry) as [string, FilterMode][])
   }, [viewFiltersMap, sessionFilterKey])
-
-  // Setter for status filter — updates only the current view's entry in the map
-  const setListFilter = useCallback((updater: Map<SessionStatusId, FilterMode> | ((prev: Map<SessionStatusId, FilterMode>) => Map<SessionStatusId, FilterMode>)) => {
-    setViewFiltersMap(prev => {
-      if (!sessionFilterKey) return prev
-      const current = new Map<SessionStatusId, FilterMode>(Object.entries(prev[sessionFilterKey]?.statuses ?? {}) as [SessionStatusId, FilterMode][])
-      const next = typeof updater === 'function' ? updater(current) : updater
-      return {
-        ...prev,
-        [sessionFilterKey]: { statuses: Object.fromEntries(next), labels: prev[sessionFilterKey]?.labels ?? {} }
-      }
-    })
-  }, [sessionFilterKey])
 
   // Setter for label filter — updates only the current view's entry in the map
   const setLabelFilter = useCallback((updater: Map<string, FilterMode> | ((prev: Map<string, FilterMode>) => Map<string, FilterMode>)) => {
@@ -728,12 +711,13 @@ function AppShellContent({
   const [searchActive, setSearchActive] = React.useState(false)
   const [searchQuery, setSearchQuery] = React.useState('')
 
-  // Grouping mode for chat list: per-view (stored in viewFiltersMap), forced to 'date' for state sub-views
+  // Grouping mode for chat list: per-view (stored in viewFiltersMap).
+  // Legacy 'status' values are mapped to 'directory' because status grouping is hidden in this fork.
   const isStateSubView = sessionFilter?.kind === 'state'
-
-  const chatGroupingMode: ChatGroupingMode = isStateSubView
-    ? 'date'
-    : (viewFiltersMap[sessionFilterKey ?? '']?.groupingMode ?? 'date')
+  const storedGroupingMode = viewFiltersMap[sessionFilterKey ?? '']?.groupingMode
+  const chatGroupingMode: ChatGroupingMode = storedGroupingMode === 'status'
+    ? 'directory'
+    : (storedGroupingMode ?? 'directory')
 
   const setChatGroupingMode = useCallback((mode: ChatGroupingMode) => {
     setViewFiltersMap(prev => {
@@ -997,7 +981,7 @@ function AppShellContent({
 
 
   // Load dynamic statuses from workspace config
-  const { statuses: statusConfigs, isLoading: isLoadingStatuses } = useStatuses(activeWorkspace?.id || null)
+  const { statuses: statusConfigs } = useStatuses(activeWorkspace?.id || null)
   const [sessionStatuses, setSessionStatuses] = React.useState<SessionStatus[]>([])
 
   // Convert StatusConfig to SessionStatus with resolved icons
@@ -1010,31 +994,9 @@ function AppShellContent({
     setSessionStatuses(statusConfigsToSessionStatuses(statusConfigs, activeWorkspace.id, isDark))
   }, [statusConfigs, activeWorkspace?.id, isDark])
 
-  // Optimistic status order: immediately reflects drag-drop order while IPC propagates.
-  // Cleared when statusConfigs changes (config watcher is source of truth).
-  const [optimisticStatusOrder, setOptimisticStatusOrder] = React.useState<string[] | null>(null)
-
-  // Clear optimistic state when the config watcher fires (statusConfigs changes)
-  React.useEffect(() => {
-    setOptimisticStatusOrder(null)
-  }, [statusConfigs])
-
-  // Derive effective todo states: apply optimistic reorder if active, otherwise use canonical order
-  const effectiveSessionStatuses = React.useMemo(() => {
-    if (!optimisticStatusOrder) return sessionStatuses
-    // Reorder sessionStatuses array to match optimistic order
-    const stateMap = new Map(sessionStatuses.map(s => [s.id, s]))
-    const reordered: SessionStatus[] = []
-    for (const id of optimisticStatusOrder) {
-      const state = stateMap.get(id)
-      if (state) reordered.push(state)
-    }
-    // Append any states not in the optimistic order (shouldn't happen, but defensive)
-    for (const state of sessionStatuses) {
-      if (!optimisticStatusOrder.includes(state.id)) reordered.push(state)
-    }
-    return reordered
-  }, [sessionStatuses, optimisticStatusOrder])
+  // Status definitions are still loaded for backward-compatible state routes and session metadata,
+  // but status navigation/reordering is hidden in this fork.
+  const effectiveSessionStatuses = sessionStatuses
 
   // Load labels from workspace config
   const { labels: labelConfigs } = useLabels(activeWorkspace?.id || null)
@@ -1064,10 +1026,10 @@ function AppShellContent({
   const filterDropdownResults = useMemo(() => {
     if (!filterDropdownQuery.trim()) return { states: [] as SessionStatus[], labels: [] as LabelMenuItem[] }
     return {
-      states: filterLabelMenuStates(effectiveSessionStatuses, filterDropdownQuery),
+      states: [] as SessionStatus[],
       labels: filterLabelMenuItems(flatLabelMenuItems, filterDropdownQuery),
     }
-  }, [filterDropdownQuery, effectiveSessionStatuses, flatLabelMenuItems])
+  }, [filterDropdownQuery, flatLabelMenuItems])
 
   // Reset selected index when query changes
   React.useEffect(() => {
@@ -1438,23 +1400,6 @@ function AppShellContent({
     return counts
   }, [activeSessionMetas, labelConfigs])
 
-  // Count sessions by individual todo state (dynamic based on effectiveSessionStatuses)
-  // Uses activeSessionMetas to exclude archived sessions from counts.
-  const sessionStatusCounts = useMemo(() => {
-    const counts: Record<SessionStatusId, number> = {}
-    // Initialize counts for all dynamic statuses
-    for (const state of effectiveSessionStatuses) {
-      counts[state.id] = 0
-    }
-    // Count sessions
-    for (const s of activeSessionMetas) {
-      const state = (s.sessionStatus || 'todo') as SessionStatusId
-      // Increment count (initialize to 0 if status not in effectiveSessionStatuses yet)
-      counts[state] = (counts[state] || 0) + 1
-    }
-    return counts
-  }, [activeSessionMetas, effectiveSessionStatuses])
-
   // Count sources by type for the Sources dropdown subcategories
   const sourceTypeCounts = useMemo(() => {
     const counts = { api: 0, mcp: 0, local: 0, openconnector: openConnectorNavItems.length }
@@ -1698,11 +1643,6 @@ function AppShellContent({
     navigate(routes.view.archived())
   }, [])
 
-  // Handler for individual todo state views
-  const handleSessionStatusClick = useCallback((stateId: SessionStatusId) => {
-    navigate(routes.view.state(stateId))
-  }, [])
-
   // Handler for label filter views (hierarchical — includes descendant labels)
   const handleLabelClick = useCallback((labelId: string) => {
     navigate(routes.view.label(labelId))
@@ -1711,14 +1651,6 @@ function AppShellContent({
   const handleViewClick = useCallback((viewId: string) => {
     navigate(routes.view.view(viewId))
   }, [])
-
-  // DnD handler: reorder statuses (flat list drag-and-drop)
-  // Sets optimistic order immediately for instant UI feedback, then fires IPC.
-  const handleStatusReorder = useCallback((orderedIds: string[]) => {
-    if (!activeWorkspaceId) return
-    setOptimisticStatusOrder(orderedIds)
-    window.electronAPI.reorderStatuses(activeWorkspaceId, orderedIds)
-  }, [activeWorkspaceId])
 
   // Handler for sources view (all sources)
   const handleSourcesClick = useCallback(() => {
@@ -1831,15 +1763,6 @@ function AppShellContent({
       editPopoverTriggerRef.current = null
     }
   }, [editPopoverOpen])
-
-  // Handler for "Configure Statuses" context menu action
-  // Opens the EditPopover for status configuration
-  // Uses setTimeout to delay opening until after context menu closes,
-  // preventing the popover from immediately closing due to focus shift
-  const openConfigureStatuses = useCallback(() => {
-    captureContextMenuPosition()
-    setTimeout(() => setEditPopoverOpen('statuses'), 50)
-  }, [captureContextMenuPosition])
 
   // Handler for "Configure Labels" context menu action
   // Opens the EditPopover for label configuration, storing which label was right-clicked
@@ -1991,9 +1914,6 @@ function AppShellContent({
 
     // 1. Sessions section: All Sessions (expandable) with status items, Flagged, Archived as children
     result.push({ id: 'nav:allSessions', type: 'nav', action: handleAllSessionsClick })
-    for (const state of effectiveSessionStatuses) {
-      result.push({ id: `nav:state:${state.id}`, type: 'nav', action: () => handleSessionStatusClick(state.id) })
-    }
     result.push({ id: 'nav:flagged', type: 'nav', action: handleFlaggedClick })
     result.push({ id: 'nav:archived', type: 'nav', action: handleArchivedClick })
 
@@ -2022,7 +1942,7 @@ function AppShellContent({
     result.push({ id: 'nav:whats-new', type: 'nav', action: handleWhatsNewClick })
 
     return result
-  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSourcesApiClick, handleSourcesMcpClick, handleSourcesLocalClick, handleSourcesOpenConnectorClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
+  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSourcesApiClick, handleSourcesMcpClick, handleSourcesLocalClick, handleSourcesOpenConnectorClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -2311,7 +2231,7 @@ function AppShellContent({
                     <TooltipContent side="right">{newChatHotkey}</TooltipContent>
                   </Tooltip>
                 </div>
-                {/* Primary Nav: All Sessions (▸ Statuses, Flagged, Archived), Labels | Sources, Skills | Settings */}
+                {/* Primary Nav: All Sessions (Flagged, Archived), Labels | Sources, Skills | Settings */}
                 {/* pb-4 provides clearance so the last item scrolls above the mask-fade-bottom gradient */}
                 <div className="flex-1 overflow-y-auto min-h-0 mask-fade-bottom pb-4">
                 <LeftSidebar
@@ -2333,7 +2253,6 @@ function AppShellContent({
                       onToggle: () => toggleExpanded('nav:allSessions'),
                       contextMenu: {
                         type: 'allSessions',
-                        onConfigureStatuses: openConfigureStatuses,
                         onMarkAllRead: () => {
                           if (!activeWorkspaceId) return
                           // Optimistic: clear hasUnread on all workspace session metas
@@ -2349,28 +2268,7 @@ function AppShellContent({
                           window.electronAPI.markAllSessionsRead(activeWorkspaceId)
                         },
                       },
-                      // Enable flat DnD reorder for status items
-                      sortable: { onReorder: handleStatusReorder },
                       items: [
-                        // Status items (sortable via SortableStatusList)
-                        ...effectiveSessionStatuses.map(state => ({
-                          id: `nav:state:${state.id}`,
-                          title: t(`status.${state.id}`, state.label),
-                          label: String(sessionStatusCounts[state.id] || 0),
-                          icon: state.icon,
-                          iconColor: state.resolvedColor,
-                          iconColorable: state.iconColorable,
-                          variant: (sessionFilter?.kind === 'state' && sessionFilter.stateId === state.id ? "default" : "ghost") as "default" | "ghost",
-                          onClick: () => handleSessionStatusClick(state.id),
-                          contextMenu: {
-                            type: 'status' as const,
-                            statusId: state.id,
-                            onConfigureStatuses: openConfigureStatuses,
-                          },
-                        })),
-                        // Separator: SortableStatusList splits here — items after become non-sortable trailingItems
-                        { id: 'separator:states-flagged', type: 'separator' as const },
-                        // Flagged (trailing, non-sortable)
                         {
                           id: "nav:flagged",
                           title: t("sidebar.flagged"),
@@ -2379,7 +2277,6 @@ function AppShellContent({
                           variant: (sessionFilter?.kind === 'flagged' ? "default" : "ghost") as "default" | "ghost",
                           onClick: handleFlaggedClick,
                         },
-                        // Archived (trailing, non-sortable)
                         {
                           id: "nav:archived",
                           title: t("sidebar.archived"),
@@ -2599,12 +2496,9 @@ function AppShellContent({
                   {isSessionsNavigation(navState) && (
                     isAutoCompact ? (
                       <CompactSessionListFilter
-                        listFilter={listFilter}
-                        setListFilter={setListFilter}
                         labelFilter={labelFilter}
                         setLabelFilter={setLabelFilter}
                         pinnedFilters={pinnedFilters}
-                        effectiveSessionStatuses={effectiveSessionStatuses}
                         displayLabelConfigs={displayLabelConfigs}
                         labelConfigs={labelConfigs}
                         chatGroupingMode={chatGroupingMode}
@@ -2617,8 +2511,8 @@ function AppShellContent({
                       <DropdownMenuTrigger asChild>
                         <HeaderIconButton
                           icon={<ListFilter className="h-4 w-4" />}
-                          className={(listFilter.size > 0 || labelFilter.size > 0) ? "bg-accent/5 text-accent rounded-[8px] shadow-tinted" : "rounded-[8px]"}
-                          style={(listFilter.size > 0 || labelFilter.size > 0) ? { '--shadow-color': 'var(--accent-rgb)' } as React.CSSProperties : undefined}
+                          className={(labelFilter.size > 0) ? "bg-accent/5 text-accent rounded-[8px] shadow-tinted" : "rounded-[8px]"}
+                          style={(labelFilter.size > 0) ? { '--shadow-color': 'var(--accent-rgb)' } as React.CSSProperties : undefined}
                         />
                       </DropdownMenuTrigger>
                       <StyledDropdownMenuContent
@@ -2645,11 +2539,10 @@ function AppShellContent({
                         {/* Header with title and clear button (only clears user-added filters, never pinned) */}
                         <div className="flex items-center justify-between px-2 py-1.5">
                           <span className="text-xs font-medium text-muted-foreground">{t("sidebar.filterChats")}</span>
-                          {(listFilter.size > 0 || labelFilter.size > 0) && (
+                          {(labelFilter.size > 0) && (
                             <button
                               onClick={(e) => {
                                 e.preventDefault()
-                                setListFilter(new Map())
                                 setLabelFilter(new Map())
                               }}
                               className="text-xs text-muted-foreground hover:text-foreground"
@@ -2696,35 +2589,20 @@ function AppShellContent({
                                   case 'Enter': {
                                     e.preventDefault()
                                     const mode: FilterMode = e.altKey ? 'exclude' : 'include'
-                                    const idx = filterDropdownSelectedIdx
-                                    if (idx < ms.length) {
-                                      // Toggle a status filter
-                                      const state = ms[idx]
-                                      if (state.id !== pinnedFilters.pinnedStatusId) {
-                                        setListFilter(prev => {
-                                          const next = new Map(prev)
-                                          if (next.has(state.id)) next.delete(state.id)
-                                          else next.set(state.id, mode)
-                                          return next
-                                        })
-                                      }
-                                    } else {
-                                      // Toggle a label filter
-                                      const item = ml[idx - ms.length]
-                                      if (item && item.id !== pinnedFilters.pinnedLabelId) {
-                                        setLabelFilter(prev => {
-                                          const next = new Map(prev)
-                                          if (next.has(item.id)) next.delete(item.id)
-                                          else next.set(item.id, mode)
-                                          return next
-                                        })
-                                      }
+                                    const item = ml[filterDropdownSelectedIdx]
+                                    if (item && item.id !== pinnedFilters.pinnedLabelId) {
+                                      setLabelFilter(prev => {
+                                        const next = new Map(prev)
+                                        if (next.has(item.id)) next.delete(item.id)
+                                        else next.set(item.id, mode)
+                                        return next
+                                      })
                                     }
                                     break
                                   }
                                 }
                               }}
-                              placeholder={t("sidebar.searchStatusesLabels")}
+                              placeholder={t("sidebar.searchLabels")}
                               className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
                               autoFocus
                             />
@@ -2737,7 +2615,7 @@ function AppShellContent({
                             {/* === HIERARCHICAL MODE (default) === */}
 
                             {/* Active filter chips: pinned (non-removable) + user-added (removable) */}
-                            {(pinnedFilters.pinnedFlagged || pinnedFilters.pinnedStatusId || pinnedFilters.pinnedLabelId || listFilter.size > 0 || labelFilter.size > 0) && (
+                            {(pinnedFilters.pinnedFlagged || pinnedFilters.pinnedLabelId || labelFilter.size > 0) && (
                               <>
                                 {/* Pinned: flagged */}
                                 {pinnedFilters.pinnedFlagged && (
@@ -2749,23 +2627,6 @@ function AppShellContent({
                                     />
                                   </StyledDropdownMenuItem>
                                 )}
-                                {/* Pinned: status from state view */}
-                                {(() => {
-                                  if (!pinnedFilters.pinnedStatusId) return null
-                                  const state = effectiveSessionStatuses.find(s => s.id === pinnedFilters.pinnedStatusId)
-                                  if (!state) return null
-                                  return (
-                                    <StyledDropdownMenuItem disabled key={`pinned-status-${state.id}`}>
-                                      <FilterMenuRow
-                                        icon={state.icon}
-                                        label={state.label}
-                                        accessory={<Check className="h-3 w-3 text-muted-foreground" />}
-                                        iconStyle={state.iconColorable ? { color: state.resolvedColor } : undefined}
-                                        noIconContainer
-                                      />
-                                    </StyledDropdownMenuItem>
-                                  )
-                                })()}
                                 {/* Pinned: label from label view */}
                                 {(() => {
                                   if (!pinnedFilters.pinnedLabelId) return null
@@ -2781,39 +2642,6 @@ function AppShellContent({
                                     </StyledDropdownMenuItem>
                                   )
                                 })()}
-                                {/* User-added: selected statuses with mode pill (include/exclude) */}
-                                {effectiveSessionStatuses.filter(s => listFilter.has(s.id)).map(state => {
-                                  const applyColor = state.iconColorable
-                                  const mode = listFilter.get(state.id)!
-                                  return (
-                                    <DropdownMenuSub key={`sel-status-${state.id}`}>
-                                      <StyledDropdownMenuSubTrigger onClick={(e) => { e.preventDefault(); setListFilter(prev => { const next = new Map(prev); next.delete(state.id); return next }) }}>
-                                        <FilterMenuRow
-                                          icon={state.icon}
-                                          label={state.label}
-                                          accessory={<FilterModeBadge mode={mode} />}
-                                          iconStyle={applyColor ? { color: state.resolvedColor } : undefined}
-                                          noIconContainer
-                                        />
-                                      </StyledDropdownMenuSubTrigger>
-                                      <StyledDropdownMenuSubContent minWidth="min-w-[140px]">
-                                        <FilterModeSubMenuItems
-                                          mode={mode}
-                                          onChangeMode={(newMode) => setListFilter(prev => {
-                                            const next = new Map(prev)
-                                            next.set(state.id, newMode)
-                                            return next
-                                          })}
-                                          onRemove={() => setListFilter(prev => {
-                                            const next = new Map(prev)
-                                            next.delete(state.id)
-                                            return next
-                                          })}
-                                        />
-                                      </StyledDropdownMenuSubContent>
-                                    </DropdownMenuSub>
-                                  )
-                                })}
                                 {/* User-added: selected labels with mode pill (include/exclude) */}
                                 {Array.from(labelFilter).map(([labelId, mode]) => {
                                   const label = findLabelById(labelConfigs, labelId)
@@ -2848,79 +2676,6 @@ function AppShellContent({
                                 <StyledDropdownMenuSeparator />
                               </>
                             )}
-
-                            {/* Statuses submenu - hierarchical with toggle selection */}
-                            <DropdownMenuSub>
-                              <StyledDropdownMenuSubTrigger>
-                                <Inbox className="h-3.5 w-3.5" />
-                                <span className="flex-1">{t("sidebar.statuses")}</span>
-                              </StyledDropdownMenuSubTrigger>
-                              <StyledDropdownMenuSubContent minWidth="min-w-[180px]">
-                                {effectiveSessionStatuses.map(state => {
-                                  const applyColor = state.iconColorable
-                                  const isPinned = state.id === pinnedFilters.pinnedStatusId
-                                  const currentMode = listFilter.get(state.id)
-                                  const isActive = !!currentMode && !isPinned
-                                  // Active status → DropdownMenuSub with mode options (Radix safe-triangle hover)
-                                  if (isActive) {
-                                    return (
-                                      <DropdownMenuSub key={state.id}>
-                                        <StyledDropdownMenuSubTrigger onClick={(e) => { e.preventDefault(); setListFilter(prev => { const next = new Map(prev); next.delete(state.id); return next }) }}>
-                                          <FilterMenuRow
-                                            icon={state.icon}
-                                            label={state.label}
-                                            accessory={<FilterModeBadge mode={currentMode} />}
-                                            iconStyle={applyColor ? { color: state.resolvedColor } : undefined}
-                                            noIconContainer
-                                          />
-                                        </StyledDropdownMenuSubTrigger>
-                                        <StyledDropdownMenuSubContent minWidth="min-w-[140px]">
-                                          <FilterModeSubMenuItems
-                                            mode={currentMode}
-                                            onChangeMode={(newMode) => setListFilter(prev => {
-                                              const next = new Map(prev)
-                                              next.set(state.id, newMode)
-                                              return next
-                                            })}
-                                            onRemove={() => setListFilter(prev => {
-                                              const next = new Map(prev)
-                                              next.delete(state.id)
-                                              return next
-                                            })}
-                                          />
-                                        </StyledDropdownMenuSubContent>
-                                      </DropdownMenuSub>
-                                    )
-                                  }
-                                  // Inactive / pinned status → simple toggleable item
-                                  return (
-                                    <AltExcludeTooltip key={state.id} show={filterAltHeld && !isPinned}>
-                                      <StyledDropdownMenuItem
-                                        disabled={isPinned}
-                                        onClick={(e) => {
-                                          if (isPinned) return
-                                          e.preventDefault()
-                                          setListFilter(prev => {
-                                            const next = new Map(prev)
-                                            if (next.has(state.id)) next.delete(state.id)
-                                            else next.set(state.id, e.altKey ? 'exclude' : 'include')
-                                            return next
-                                          })
-                                        }}
-                                      >
-                                        <FilterMenuRow
-                                          icon={state.icon}
-                                          label={state.label}
-                                          accessory={isPinned ? <Check className="h-3 w-3 text-muted-foreground" /> : null}
-                                          iconStyle={applyColor ? { color: state.resolvedColor } : undefined}
-                                          noIconContainer
-                                        />
-                                      </StyledDropdownMenuItem>
-                                    </AltExcludeTooltip>
-                                  )
-                                })}
-                              </StyledDropdownMenuSubContent>
-                            </DropdownMenuSub>
 
                             {/* Labels submenu - hierarchical tree with recursive submenus */}
                             <DropdownMenuSub>
@@ -2960,10 +2715,10 @@ function AppShellContent({
                                       <span className="flex-1">{t("sidebar.groupByDate")}</span>
                                       {chatGroupingMode === 'date' && <Check className="h-3 w-3 text-muted-foreground" />}
                                     </StyledDropdownMenuItem>
-                                    <StyledDropdownMenuItem onClick={() => setChatGroupingMode('status')}>
-                                      <Inbox className="h-3.5 w-3.5" />
-                                      <span className="flex-1">{t("sidebar.groupByStatus")}</span>
-                                      {chatGroupingMode === 'status' && <Check className="h-3 w-3 text-muted-foreground" />}
+                                    <StyledDropdownMenuItem onClick={() => setChatGroupingMode('directory')}>
+                                      <FolderOpen className="h-3.5 w-3.5" />
+                                      <span className="flex-1">{t("sidebar.groupByDirectory")}</span>
+                                      {chatGroupingMode === 'directory' && <Check className="h-3 w-3 text-muted-foreground" />}
                                     </StyledDropdownMenuItem>
                                     <StyledDropdownMenuItem onClick={() => setChatGroupingMode('unread')}>
                                       <MailOpen className="h-3.5 w-3.5" />
@@ -2993,98 +2748,10 @@ function AppShellContent({
                                 Supports keyboard navigation (ArrowUp/Down/Enter in input). */}
                             {filterDropdownResults.states.length === 0 && filterDropdownResults.labels.length === 0 ? (
                               <div className="px-3 py-4 text-center text-xs text-muted-foreground">
-                                No matching statuses or labels
+                                No matching labels
                               </div>
                             ) : (
                               <div ref={filterDropdownListRef} className="max-h-[240px] overflow-y-auto py-1">
-                                {/* Matched statuses */}
-                                {filterDropdownResults.states.length > 0 && (
-                                  <>
-                                    <div className="px-3 pt-1.5 pb-1 text-[11px] font-medium text-muted-foreground/60 uppercase tracking-wider">
-                                      Statuses
-                                    </div>
-                                    {filterDropdownResults.states.map((state, index) => {
-                                      const applyColor = state.iconColorable
-                                      const isPinned = state.id === pinnedFilters.pinnedStatusId
-                                      const currentMode = listFilter.get(state.id)
-                                      const isHighlighted = index === filterDropdownSelectedIdx
-                                      const isActive = !!currentMode && !isPinned
-                                      // Active status → DropdownMenuSub with mode options
-                                      if (isActive) {
-                                        return (
-                                          <DropdownMenuSub key={`flat-status-${state.id}`}>
-                                            <StyledDropdownMenuSubTrigger
-                                              data-filter-selected={isHighlighted}
-                                              onMouseEnter={() => setFilterDropdownSelectedIdx(index)}
-                                              className={cn("mx-1", isHighlighted && "bg-foreground/5")}
-                                              onClick={(e) => { e.preventDefault(); setListFilter(prev => { const next = new Map(prev); next.delete(state.id); return next }) }}
-                                            >
-                                              <FilterMenuRow
-                                                icon={state.icon}
-                                                label={state.label}
-                                                accessory={<FilterModeBadge mode={currentMode} />}
-                                                iconStyle={applyColor ? { color: state.resolvedColor } : undefined}
-                                                noIconContainer
-                                              />
-                                            </StyledDropdownMenuSubTrigger>
-                                            <StyledDropdownMenuSubContent minWidth="min-w-[140px]">
-                                              <FilterModeSubMenuItems
-                                                mode={currentMode}
-                                                onChangeMode={(newMode) => setListFilter(prev => {
-                                                  const next = new Map(prev)
-                                                  next.set(state.id, newMode)
-                                                  return next
-                                                })}
-                                                onRemove={() => setListFilter(prev => {
-                                                  const next = new Map(prev)
-                                                  next.delete(state.id)
-                                                  return next
-                                                })}
-                                              />
-                                            </StyledDropdownMenuSubContent>
-                                          </DropdownMenuSub>
-                                        )
-                                      }
-                                      // Inactive / pinned status → plain div with click-to-toggle
-                                      return (
-                                        <AltExcludeTooltip key={`flat-status-${state.id}`} show={filterAltHeld && !isPinned}>
-                                          <div
-                                            data-filter-selected={isHighlighted}
-                                            onMouseEnter={() => setFilterDropdownSelectedIdx(index)}
-                                            onClick={(e) => {
-                                              if (isPinned) return
-                                              e.preventDefault()
-                                              setListFilter(prev => {
-                                                const next = new Map(prev)
-                                                if (next.has(state.id)) next.delete(state.id)
-                                                else next.set(state.id, e.altKey ? 'exclude' : 'include')
-                                                return next
-                                              })
-                                            }}
-                                            className={cn(
-                                              // SVG sizing matches StyledDropdownMenuSubTrigger so icons render at the same size
-                                              "flex cursor-pointer select-none items-center gap-2 rounded-[4px] mx-1 px-2 py-1.5 text-sm [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0",
-                                              isHighlighted && "bg-foreground/5",
-                                              isPinned && "opacity-50 pointer-events-none",
-                                            )}
-                                          >
-                                            <FilterMenuRow
-                                              icon={state.icon}
-                                              label={state.label}
-                                              accessory={isPinned ? <Check className="h-3 w-3 text-muted-foreground" /> : null}
-                                              iconStyle={applyColor ? { color: state.resolvedColor } : undefined}
-                                              noIconContainer
-                                            />
-                                          </div>
-                                        </AltExcludeTooltip>
-                                      )
-                                    })}
-                                  </>
-                                )}
-                                {/* Separator between sections */}
-                                {filterDropdownResults.states.length > 0 && filterDropdownResults.labels.length > 0 && (
-                                  <div className="my-1 mx-2 border-t border-border/40" />
-                                )}
                                 {/* Matched labels — flat list with parent breadcrumbs */}
                                 {filterDropdownResults.labels.length > 0 && (
                                   <>
@@ -3092,8 +2759,7 @@ function AppShellContent({
                                       Labels
                                     </div>
                                     {filterDropdownResults.labels.map((item, index) => {
-                                      // Offset by state count for unified index
-                                      const flatIndex = filterDropdownResults.states.length + index
+                                      const flatIndex = index
                                       const isPinned = item.id === pinnedFilters.pinnedLabelId
                                       const currentMode = labelFilter.get(item.id)
                                       const isHighlighted = flatIndex === filterDropdownSelectedIdx

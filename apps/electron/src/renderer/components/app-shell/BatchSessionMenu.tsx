@@ -5,7 +5,7 @@
  * and mutation callbacks. Renders polymorphic menu items via useMenuComponents() so it
  * works in both DropdownMenu and ContextMenu scenarios.
  *
- * Mirrors the actions from MultiSelectPanel (Status, Labels, Archive) with additions
+ * Mirrors the actions from MultiSelectPanel (Labels, Archive) with additions
  * for Flag and Delete that make sense in a context menu.
  */
 
@@ -20,9 +20,8 @@ import { useSelectedIds } from '@/hooks/useSession'
 import { useSessionSelection } from '@/hooks/useSession'
 import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from '@/atoms/sessions'
 import { useAppShellContext } from '@/context/AppShellContext'
-import { getStateColor, getStateIcon, type SessionStatusId } from '@/config/session-status-config'
 import { extractLabelId } from '@craft-agent/shared/labels'
-import { LabelMenuItems, StatusMenuItems } from './SessionMenuParts'
+import { LabelMenuItems } from './SessionMenuParts'
 
 export interface BatchSessionMenuProps {
   /** Callback to open Send to Workspace dialog for the selected sessions */
@@ -39,7 +38,6 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
   const sessionMetaMap = useAtomValue(sessionMetaMapAtom)
 
   const {
-    onSessionStatusChange,
     onArchiveSession,
     onUnarchiveSession,
     onFlagSession,
@@ -47,7 +45,6 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
     onSessionLabelsChange,
     onDeleteSession,
     workspaces,
-    sessionStatuses = [],
     labels = [],
   } = useAppShellContext()
 
@@ -62,14 +59,6 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
     })
     return metas
   }, [selectedIds, sessionMetaMap])
-
-  // Compute shared status (if all selected have the same status)
-  const activeStatusId = useMemo((): SessionStatusId | null => {
-    if (selectedMetas.length === 0) return null
-    const first = (selectedMetas[0].sessionStatus || 'todo') as SessionStatusId
-    const allSame = selectedMetas.every(meta => (meta.sessionStatus || 'todo') === first)
-    return allSame ? first : null
-  }, [selectedMetas])
 
   // Compute intersection of applied labels (only labels ALL selected sessions have)
   const appliedLabelIds = useMemo(() => {
@@ -91,13 +80,6 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
     () => selectedMetas.length > 0 && selectedMetas.every(m => m.isFlagged),
     [selectedMetas]
   )
-
-  // Batch status change
-  const handleBatchSetStatus = useCallback((status: SessionStatusId) => {
-    selectedIds.forEach(sessionId => {
-      onSessionStatusChange(sessionId, status)
-    })
-  }, [selectedIds, onSessionStatusChange])
 
   // Batch label toggle (all-or-nothing semantics, same as MainContentPanel)
   const handleBatchToggleLabel = useCallback((labelId: string) => {
@@ -157,16 +139,6 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
     toast(`${count} ${count === 1 ? 'session' : 'sessions'} deleted`)
   }, [selectedIds, onDeleteSession, clearMultiSelect])
 
-  // Resolve current status icon for the submenu trigger
-  const statusIcon = activeStatusId
-    ? (() => {
-        const icon = getStateIcon(activeStatusId, sessionStatuses)
-        return React.isValidElement(icon)
-          ? React.cloneElement(icon as React.ReactElement<{ bare?: boolean }>, { bare: true })
-          : icon
-      })()
-    : null
-
   const count = selectedIds.size
 
   return (
@@ -177,27 +149,6 @@ export function BatchSessionMenu({ onSendToWorkspace }: BatchSessionMenuProps = 
       </div>
       <Separator />
 
-      {/* Status submenu */}
-      <Sub>
-        <SubTrigger className="pr-2">
-          {statusIcon ? (
-            <span style={{ color: getStateColor(activeStatusId!, sessionStatuses) ?? 'var(--foreground)' }}>
-              {statusIcon}
-            </span>
-          ) : (
-            <span className="h-3.5 w-3.5" />
-          )}
-          <span className="flex-1">{t("sessionMenu.status")}</span>
-        </SubTrigger>
-        <SubContent>
-          <StatusMenuItems
-            sessionStatuses={sessionStatuses}
-            activeStateId={activeStatusId ?? undefined}
-            onSelect={handleBatchSetStatus}
-            menu={{ MenuItem }}
-          />
-        </SubContent>
-      </Sub>
 
       {/* Labels submenu */}
       {labels.length > 0 && (

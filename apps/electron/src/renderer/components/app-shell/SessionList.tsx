@@ -4,7 +4,7 @@ import { useSetAtom } from "jotai"
 import { isToday, isYesterday, format, startOfDay } from "date-fns"
 import { getDateLocale } from "@craft-agent/shared/i18n"
 import { useAction } from "@/actions"
-import { Inbox, Archive } from "lucide-react"
+import { Archive, Inbox } from "lucide-react"
 
 import { getSessionStatus } from "@/utils/session"
 import * as storage from "@/lib/local-storage"
@@ -37,7 +37,7 @@ export interface SessionListRow {
 }
 
 /** Grouping mode for chat list */
-export type ChatGroupingMode = 'date' | 'status' | 'unread'
+export type ChatGroupingMode = 'date' | 'directory' | 'status' | 'unread'
 
 interface SessionListProps {
   items: SessionMeta[]
@@ -75,7 +75,7 @@ interface SessionListProps {
   labels?: LabelConfig[]
   /** Callback when session labels are toggled (for labels submenu in SessionMenu) */
   onLabelsChange?: (sessionId: string, labels: string[]) => void
-  /** How to group sessions: 'date' (default) or 'status' */
+  /** How to group sessions: 'directory' (default), 'date', or 'unread'. 'status' is kept for legacy compatibility. */
   groupingMode?: ChatGroupingMode
   /** Workspace ID for content search (optional - if not provided, content search is disabled) */
   workspaceId?: string
@@ -101,6 +101,27 @@ function formatDateGroupLabel(date: Date, t: (key: string) => string, lang: stri
   if (isToday(date)) return t('common.today')
   if (isYesterday(date)) return t('common.yesterday')
   return format(date, 'MMM d', { locale: getDateLocale(lang) })
+}
+
+function getDirectoryGroupKey(item: SessionMeta): string {
+  return `directory-${encodeURIComponent(item.workingDirectory || '__none__')}`
+}
+
+function decodeDirectoryGroupKey(groupKey: string): string | undefined {
+  const encoded = groupKey.startsWith('directory-') ? groupKey.slice('directory-'.length) : '__none__'
+  try {
+    const decoded = decodeURIComponent(encoded)
+    return decoded === '__none__' ? undefined : decoded
+  } catch {
+    return undefined
+  }
+}
+
+function getDirectoryGroupLabelFromPath(path: string | undefined, t: (key: string) => string): string {
+  if (!path) return t('sidebar.noProject')
+  const normalized = path.replace(/[\\/]+$/, '')
+  const parts = normalized.split(/[\\/]+/).filter(Boolean)
+  return parts.at(-1) || path
 }
 
 /**
@@ -133,7 +154,7 @@ export function SessionList({
   evaluateViews,
   labels = [],
   onLabelsChange,
-  groupingMode = 'date',
+  groupingMode = 'directory',
   workspaceId,
   statusFilter,
   labelFilterMap,
@@ -329,6 +350,50 @@ export function SessionList({
       }
     }
 
+    if (groupingMode === 'directory') {
+      const groupsByKey = new Map<string, { rows: SessionListRow[], path?: string }>()
+
+      for (const row of rows) {
+        const key = getDirectoryGroupKey(row.item)
+        if (!groupsByKey.has(key)) groupsByKey.set(key, { rows: [], path: row.item.workingDirectory })
+        groupsByKey.get(key)!.rows.push(row)
+      }
+
+      for (const meta of collapsedGroupsMeta) {
+        if (!groupsByKey.has(meta.key)) {
+          groupsByKey.set(meta.key, { rows: [], path: decodeDirectoryGroupKey(meta.key) })
+        }
+      }
+
+      const orderedGroups: EntityListGroup<SessionListRow>[] = []
+      for (const [key, { rows: groupRows, path }] of groupsByKey) {
+        groupRows.sort((a, b) => (b.item.lastMessageAt || 0) - (a.item.lastMessageAt || 0))
+        const collapsedMeta = collapsedGroupsMeta.find(m => m.key === key)
+        orderedGroups.push({
+          key,
+          label: getDirectoryGroupLabelFromPath(path, t),
+          items: groupRows,
+          collapsible: true,
+          ...(collapsedMeta ? { collapsedCount: collapsedMeta.count } : {}),
+        })
+      }
+
+      orderedGroups.sort((a, b) => {
+        const aLatest = Math.max(...a.items.map(row => row.item.lastMessageAt || 0), 0)
+        const bLatest = Math.max(...b.items.map(row => row.item.lastMessageAt || 0), 0)
+        return bLatest - aLatest || a.label.localeCompare(b.label)
+      })
+
+      if (orderedGroups.length === 1) {
+        orderedGroups[0].collapsible = false
+      }
+
+      return {
+        rows: orderedGroups.flatMap(g => g.items),
+        groups: orderedGroups,
+      }
+    }
+
     if (groupingMode === 'status') {
       const statusOrder = new Map<string, number>()
       sessionStatuses.forEach((state, index) => statusOrder.set(state.id, index))
@@ -437,7 +502,10 @@ export function SessionList({
   const flatRows = rowData.rows
 
   const collapseAllGroups = useCallback(() => {
-    if (groupingMode === 'status') {
+    if (groupingMode === 'directory') {
+      const allKeys = new Set(items.map(item => getDirectoryGroupKey(item)))
+      setCollapsedGroups(allKeys)
+    } else if (groupingMode === 'status') {
       const allKeys = new Set(items.map(item => `status-${getSessionStatus(item)}`))
       setCollapsedGroups(allKeys)
     } else if (groupingMode === 'unread') {
