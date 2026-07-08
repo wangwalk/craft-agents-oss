@@ -513,6 +513,7 @@ export async function createSource(
     enabled: input.enabled ?? true,
     provider: input.provider,
     type: input.type,
+    tagline: input.tagline,
     createdAt: now,
     updatedAt: now,
   };

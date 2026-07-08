@@ -36,15 +36,36 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
     const workspace = getWorkspaceByNameOrId(workspaceId)
     if (!workspace) throw new Error(`Workspace not found: ${workspaceId}`)
     const { createSource } = await import('@craft-agent/shared/sources')
-    return createSource(workspace.rootPath, {
+    const source = await createSource(workspace.rootPath, {
       name: config.name || 'New Source',
       provider: config.provider || 'custom',
       type: config.type || 'mcp',
       enabled: config.enabled ?? true,
+      icon: config.icon,
+      tagline: config.tagline,
       mcp: config.mcp,
       api: config.api,
       local: config.local,
     })
+
+    if (source.provider === 'openconnector') {
+      const { writeFileSync } = await import('fs')
+      const { getSourcePath, getOpenConnectorGuide } = await import('@craft-agent/shared/sources')
+      const { getSourcePermissionsPath } = await import('@craft-agent/shared/agent')
+      const { join } = await import('path')
+
+      writeFileSync(join(getSourcePath(workspace.rootPath, source.slug), 'guide.md'), getOpenConnectorGuide())
+      writeFileSync(getSourcePermissionsPath(workspace.rootPath, source.slug), JSON.stringify({
+        allowedMcpPatterns: [
+          { pattern: 'list', comment: 'Read-only list operations exposed by OpenConnector providers' },
+          { pattern: 'get', comment: 'Read-only get/read operations exposed by OpenConnector providers' },
+          { pattern: 'search', comment: 'Read-only search operations exposed by OpenConnector providers' },
+          { pattern: 'find', comment: 'Read-only find operations exposed by OpenConnector providers' },
+        ],
+      }, null, 2))
+    }
+
+    return source
   })
 
   // Delete a source

@@ -538,6 +538,7 @@ export interface CreateSourceInput {
   api?: ApiSourceConfig;
   local?: LocalSourceConfig;
   icon?: string; // Emoji or URL (auto-downloaded)
+  tagline?: string;
   enabled?: boolean;
 }
 

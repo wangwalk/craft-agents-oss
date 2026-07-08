@@ -97,6 +97,28 @@ export {
   isBuiltinSource,
 } from './builtin-sources.ts';
 
+// Source templates (installable source presets shown in the UI)
+export {
+  OPENCONNECTOR_TEMPLATE_ID,
+  DEFAULT_OPENCONNECTOR_MCP_URL,
+  OPENCONNECTOR_PROVIDER_APPS,
+  SOURCE_TEMPLATES,
+  getSourceTemplates,
+  getSourceTemplate,
+  buildSourceConfigFromTemplate,
+  isOpenConnectorSource,
+  normalizeOpenConnectorMcpUrl,
+  inferOpenConnectorProviderIdsFromToolNames,
+  getOpenConnectorGuide,
+} from './source-templates.ts';
+export type {
+  SourceTemplate,
+  SourceTemplateSetupField,
+  SourceTemplateSetupMode,
+  BuildSourceTemplateInput,
+  OpenConnectorProviderApp,
+} from './source-templates.ts';
+
 // API Tools (types)
 export type { SummarizeCallback } from './api-tools.ts';
 

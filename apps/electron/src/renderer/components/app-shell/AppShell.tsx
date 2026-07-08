@@ -117,6 +117,7 @@ import {
 } from "@/contexts/NavigationContext"
 import type { SettingsSubpage } from "../../../shared/types"
 import { SourcesListPanel } from "./SourcesListPanel"
+import { SourceTemplateDialog } from "./SourceTemplateDialog"
 import { SkillsListPanel } from "./SkillsListPanel"
 import { AutomationsListPanel } from "../automations/AutomationsListPanel"
 import { APP_EVENTS, AGENT_EVENTS, type AutomationFilterKind, AUTOMATION_TYPE_TO_FILTER_KIND } from "../automations/types"
@@ -1743,6 +1744,8 @@ function AppShellContent({
   // their request in the popover UI before opening a new chat window.
   // add-source variants: add-source (generic), add-source-api, add-source-mcp, add-source-local
   const [editPopoverOpen, setEditPopoverOpen] = useState<'statuses' | 'labels' | 'views' | 'add-source' | 'add-source-api' | 'add-source-mcp' | 'add-source-local' | 'add-skill' | 'add-label' | 'automation-config' | null>(null)
+  const [sourceTemplateDialogOpen, setSourceTemplateDialogOpen] = useState(false)
+  const sourceTemplateFallbackRef = useRef<'add-source' | 'add-source-api' | 'add-source-mcp' | 'add-source-local'>('add-source')
 
   // Stores the Y position of the last right-clicked sidebar item so the EditPopover
   // appears near it rather than at a fixed location. Updated synchronously before
@@ -1838,13 +1841,12 @@ function AppShellContent({
     }
   }, [activeWorkspace?.id])
 
-  // Handler for "Add Source" context menu action
-  // Opens the EditPopover for adding a new source
-  // Optional sourceType param allows filter-aware context (from subcategory menus or filtered views)
+  // Handler for "Add Source" actions. Opens the template picker first; the picker
+  // still offers an advanced/custom path that falls back to the agent-driven EditPopover.
   const openAddSource = useCallback((sourceType?: 'api' | 'mcp' | 'local') => {
     captureContextMenuPosition()
-    const key = sourceType ? `add-source-${sourceType}` as const : 'add-source' as const
-    setTimeout(() => setEditPopoverOpen(key), 50)
+    sourceTemplateFallbackRef.current = sourceType ? `add-source-${sourceType}` as const : 'add-source'
+    setSourceTemplateDialogOpen(true)
   }, [captureContextMenuPosition])
 
   // Handler for "Add Skill" context menu action
@@ -3110,18 +3112,11 @@ function AppShellContent({
                   )}
                   {/* Add Source button (only for sources mode) - uses filter-aware edit config */}
                   {isSourcesNavigation(navState) && activeWorkspace && (
-                    <EditPopover
-                      trigger={
-                        <HeaderIconButton
-                          icon={<Plus className="h-4 w-4" />}
-                          tooltip={t("sidebarMenu.addSource")}
-                          data-tutorial="add-source-button"
-                        />
-                      }
-                      {...getEditConfig(
-                        sourceFilter?.kind === 'type' ? `add-source-${sourceFilter.sourceType}` as EditContextKey : 'add-source',
-                        activeWorkspace.rootPath
-                      )}
+                    <HeaderIconButton
+                      icon={<Plus className="h-4 w-4" />}
+                      tooltip={t("sidebarMenu.addSource")}
+                      data-tutorial="add-source-button"
+                      onClick={() => openAddSource(sourceFilter?.kind === 'type' ? sourceFilter.sourceType : undefined)}
                     />
                   )}
                   {/* Add Skill button (only for skills mode) */}
@@ -3159,6 +3154,7 @@ function AppShellContent({
                 sources={sources}
                 sourceFilter={sourceFilter}
                 workspaceRootPath={activeWorkspace?.rootPath}
+                onAddSource={() => openAddSource(sourceFilter?.kind === 'type' ? sourceFilter.sourceType : undefined)}
                 onDeleteSource={handleDeleteSource}
                 onSourceClick={handleSourceSelect}
                 selectedSourceSlug={isSourcesNavigation(navState) && navState.details ? navState.details.sourceSlug : null}
@@ -3350,6 +3346,26 @@ function AppShellContent({
        */}
       {activeWorkspace && (
         <>
+          <SourceTemplateDialog
+            open={sourceTemplateDialogOpen}
+            workspaceId={activeWorkspaceId}
+            onOpenChange={setSourceTemplateDialogOpen}
+            onCreated={(source) => {
+              setSources((current) => current.some((item) => item.config.slug === source.slug) ? current : [
+                ...current,
+                {
+                  workspaceId: activeWorkspace.id,
+                  workspaceRootPath: activeWorkspace.rootPath,
+                  folderPath: `${activeWorkspace.rootPath}/sources/${source.slug}`,
+                  config: source,
+                  guide: { raw: '' },
+                },
+              ])
+              navigate(routes.view.sourcesMcp(source.slug))
+            }}
+            onCustomSource={() => setTimeout(() => setEditPopoverOpen(sourceTemplateFallbackRef.current), 50)}
+          />
+
           {/* Configure Statuses EditPopover - anchored near sidebar */}
           <EditPopover
             open={editPopoverOpen === 'statuses'}

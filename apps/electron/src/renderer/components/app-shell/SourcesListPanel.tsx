@@ -37,6 +37,7 @@ export interface SourcesListPanelProps {
   sources: LoadedSource[]
   sourceFilter?: SourceFilter | null
   workspaceRootPath?: string
+  onAddSource?: () => void
   onDeleteSource: (sourceSlug: string) => void
   onSourceClick: (source: LoadedSource) => void
   selectedSourceSlug?: string | null
@@ -48,6 +49,7 @@ export function SourcesListPanel({
   sources,
   sourceFilter,
   workspaceRootPath,
+  onAddSource,
   onDeleteSource,
   onSourceClick,
   selectedSourceSlug,
@@ -95,18 +97,27 @@ export function SourcesListPanel({
           docKey="sources"
         >
           {workspaceRootPath && (
-            <EditPopover
-              align="center"
-              trigger={
-                <button className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors">
-                  {t('sourcesList.addSource')}
-                </button>
-              }
-              {...getEditConfig(
-                sourceFilter?.kind === 'type' ? `add-source-${sourceFilter.sourceType}` as EditContextKey : 'add-source',
-                workspaceRootPath
-              )}
-            />
+            onAddSource ? (
+              <button
+                onClick={onAddSource}
+                className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors"
+              >
+                {t('sourcesList.addSource')}
+              </button>
+            ) : (
+              <EditPopover
+                align="center"
+                trigger={
+                  <button className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors">
+                    {t('sourcesList.addSource')}
+                  </button>
+                }
+                {...getEditConfig(
+                  sourceFilter?.kind === 'type' ? `add-source-${sourceFilter.sourceType}` as EditContextKey : 'add-source',
+                  workspaceRootPath
+                )}
+              />
+            )
           )}
         </EntityListEmptyScreen>
       }

@@ -29,6 +29,7 @@ import {
 } from '@/components/info'
 import type { LoadedSource, McpToolWithPermission } from '../../shared/types'
 import type { PermissionsConfigFile } from '@craft-agent/shared/agent/modes'
+import { OPENCONNECTOR_PROVIDER_APPS, inferOpenConnectorProviderIdsFromToolNames, isOpenConnectorSource } from '@craft-agent/shared/sources'
 
 interface SourceInfoPageProps {
   sourceSlug: string
@@ -314,6 +315,14 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
     return buildToolsData(mcpTools)
   }, [mcpTools])
 
+  const openConnectorApps = useMemo(() => {
+    if (!source || !isOpenConnectorSource(source.config)) return []
+    const discoveredIds = inferOpenConnectorProviderIdsFromToolNames((mcpTools ?? []).map((tool) => tool.name))
+    if (discoveredIds.length === 0) return OPENCONNECTOR_PROVIDER_APPS
+    const discovered = new Set(discoveredIds)
+    return OPENCONNECTOR_PROVIDER_APPS.filter((app) => discovered.has(app.id))
+  }, [source, mcpTools])
+
   // Handle opening URL (website or folder)
   const handleOpenUrl = useCallback(async () => {
     if (!source || !sourceUrl) return
@@ -479,6 +488,43 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
                 loading={mcpToolsLoading}
                 error={mcpToolsError ?? undefined}
               />
+            </Info_Section>
+          )}
+
+          {/* OpenConnector provider apps */}
+          {isOpenConnectorSource(source.config) && (
+            <Info_Section
+              title={t('sourceInfo.openConnectorApps')}
+              description={t('sourceInfo.openConnectorAppsDesc')}
+            >
+              <div className="grid gap-3 md:grid-cols-2">
+                {openConnectorApps.map((app) => {
+                  const actionCount = (mcpTools ?? []).filter((tool) => tool.name.toLowerCase().includes(app.id)).length
+                  return (
+                    <div key={app.id} className="rounded-[12px] border border-border/60 bg-foreground/[0.02] p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-foreground/[0.05] text-xl">{app.icon}</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 text-sm font-semibold">
+                            <span>{app.name}</span>
+                            <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+                              {actionCount > 0 ? t('sourceInfo.openConnectorActionCount', { count: actionCount }) : t('sourceInfo.openConnectorAvailable')}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">{app.tagline}</p>
+                          <div className="mt-3 flex flex-wrap gap-1.5">
+                            {app.commonActions.slice(0, 4).map((action) => (
+                              <span key={action} className="rounded bg-foreground/[0.05] px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                                {action}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </Info_Section>
           )}
 
