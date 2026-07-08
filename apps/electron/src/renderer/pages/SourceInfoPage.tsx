@@ -12,8 +12,7 @@ import { AlertCircle } from 'lucide-react'
 import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
 import { SourceAvatar } from '@/components/ui/source-avatar'
 import { SourceMenu } from '@/components/app-shell/SourceMenu'
-import { cn } from '@/lib/utils'
-import { routes, navigate } from '@/lib/navigate'
+import { useAppShellContext } from '@/context/AppShellContext'
 import { useNavigation } from '@/contexts/NavigationContext'
 import { toast } from 'sonner'
 import {
@@ -29,7 +28,16 @@ import {
 } from '@/components/info'
 import type { LoadedSource, McpToolWithPermission } from '../../shared/types'
 import type { PermissionsConfigFile } from '@craft-agent/shared/agent/modes'
-import { OPENCONNECTOR_PROVIDER_APPS, inferOpenConnectorProviderIdsFromToolNames, isOpenConnectorSource } from '@craft-agent/shared/sources'
+import {
+  OPENCONNECTOR_PROVIDER_APPS,
+  isOpenConnectorSource,
+  type OpenConnectorProviderApp,
+} from '@craft-agent/shared/sources/source-templates'
+import {
+  getOpenConnectorActionCountForProvider,
+  getOpenConnectorToolsForProvider,
+  parseOpenConnectorVirtualSourceId,
+} from '@/lib/openconnector'
 
 interface SourceInfoPageProps {
   sourceSlug: string
@@ -133,6 +141,21 @@ function buildToolsData(tools: McpToolWithPermission[]): ToolRow[] {
   }))
 }
 
+function buildOpenConnectorActionData(
+  app: OpenConnectorProviderApp,
+  gatewayTools: McpToolWithPermission[] | null,
+  t: (key: string, options?: Record<string, unknown>) => string
+): ToolRow[] {
+  const executeActionTool = gatewayTools?.find((tool) => tool.name === 'execute_action')
+  const permission = executeActionTool?.allowed === false ? 'requires-permission' : 'allowed'
+
+  return app.commonActions.map((action) => ({
+    name: action,
+    description: t('sourceInfo.openConnectorActionViaGateway', { provider: app.name }),
+    permission,
+  }))
+}
+
 /**
  * Get contextual description for Connection section based on source type
  */
@@ -172,6 +195,10 @@ function getPermissionsDescription(source: LoadedSource, t: (key: string) => str
 export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: SourceInfoPageProps) {
   const { t } = useTranslation()
   const { navigateToSource } = useNavigation()
+  const { workspaces } = useAppShellContext()
+  const remoteWorkspaceId = workspaces.find((workspace) => workspace.id === workspaceId)?.remoteServer?.remoteWorkspaceId ?? null
+  const openConnectorSelection = useMemo(() => parseOpenConnectorVirtualSourceId(sourceSlug), [sourceSlug])
+  const baseSourceSlug = openConnectorSelection?.sourceSlug ?? sourceSlug
   const [source, setSource] = useState<LoadedSource | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -194,11 +221,11 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
 
         if (!isMounted) return
 
-        const found = sources.find((s) => s.config.slug === sourceSlug)
+        const found = sources.find((s) => s.config.slug === baseSourceSlug)
         if (found) {
           setSource(found)
 
-          const config = await window.electronAPI.getSourcePermissionsConfig(workspaceId, sourceSlug)
+          const config = await window.electronAPI.getSourcePermissionsConfig(workspaceId, baseSourceSlug)
           if (isMounted) {
             setPermissionsConfig(config)
           }
@@ -218,7 +245,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
     return () => {
       isMounted = false
     }
-  }, [workspaceId, sourceSlug])
+  }, [workspaceId, baseSourceSlug, t])
 
   // Load MCP tools when source is loaded and is MCP type
   useEffect(() => {
@@ -234,7 +261,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
 
     const loadTools = async () => {
       try {
-        const result = await window.electronAPI.getMcpTools(workspaceId, sourceSlug)
+        const result = await window.electronAPI.getMcpTools(workspaceId, baseSourceSlug)
         if (!isMounted) return
 
         if (result.success && result.tools) {
@@ -255,7 +282,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
     return () => {
       isMounted = false
     }
-  }, [source, workspaceId, sourceSlug])
+  }, [source, workspaceId, baseSourceSlug, t])
 
   // Load workspace settings (for localMcpEnabled)
   useEffect(() => {
@@ -274,15 +301,15 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
     if (!window.electronAPI?.onSourcesChanged) return
 
     const cleanup = window.electronAPI.onSourcesChanged((changedWorkspaceId, sources) => {
-      if (changedWorkspaceId !== workspaceId) return
-      const updated = sources.find((s) => s.config.slug === sourceSlug)
+      if (changedWorkspaceId !== workspaceId && changedWorkspaceId !== remoteWorkspaceId) return
+      const updated = sources.find((s) => s.config.slug === baseSourceSlug)
 
       if (updated) {
         setSource(updated)
 
         const loadPermissionsConfig = async () => {
           try {
-            const config = await window.electronAPI.getSourcePermissionsConfig(workspaceId, sourceSlug)
+            const config = await window.electronAPI.getSourcePermissionsConfig(workspaceId, baseSourceSlug)
             setPermissionsConfig(config)
           } catch (err) {
             console.error('[SourceInfoPage] Failed to reload permissions config:', err)
@@ -293,7 +320,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
     })
 
     return cleanup
-  }, [sourceSlug, workspaceId])
+  }, [baseSourceSlug, workspaceId, remoteWorkspaceId])
 
   // Compute source URL
   const sourceUrl = useMemo(() => source ? getSourceUrl(source) : null, [source])
@@ -309,19 +336,35 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
     return buildMcpPermissionsData(permissionsConfig)
   }, [permissionsConfig, source])
 
-  // Build data for ToolsDataTable
-  const toolsData = useMemo(() => {
-    if (!mcpTools) return []
-    return buildToolsData(mcpTools)
-  }, [mcpTools])
-
   const openConnectorApps = useMemo(() => {
     if (!source || !isOpenConnectorSource(source.config)) return []
-    const discoveredIds = inferOpenConnectorProviderIdsFromToolNames((mcpTools ?? []).map((tool) => tool.name))
-    if (discoveredIds.length === 0) return OPENCONNECTOR_PROVIDER_APPS
-    const discovered = new Set(discoveredIds)
-    return OPENCONNECTOR_PROVIDER_APPS.filter((app) => discovered.has(app.id))
-  }, [source, mcpTools])
+    return OPENCONNECTOR_PROVIDER_APPS
+  }, [source])
+
+  const selectedOpenConnectorApp = useMemo(() => {
+    if (!openConnectorSelection) return null
+    return OPENCONNECTOR_PROVIDER_APPS.find((app) => app.id === openConnectorSelection.providerId) ?? null
+  }, [openConnectorSelection])
+
+  const providerTools = useMemo(() => {
+    if (!selectedOpenConnectorApp || !mcpTools) return []
+    return getOpenConnectorToolsForProvider(mcpTools, selectedOpenConnectorApp.id)
+  }, [selectedOpenConnectorApp, mcpTools])
+
+  const selectedOpenConnectorActionCount = useMemo(() => {
+    if (!selectedOpenConnectorApp) return 0
+    return getOpenConnectorActionCountForProvider(selectedOpenConnectorApp, mcpTools ?? [])
+  }, [selectedOpenConnectorApp, mcpTools])
+
+  // Build data for ToolsDataTable
+  const toolsData = useMemo(() => {
+    if (selectedOpenConnectorApp) {
+      return providerTools.length > 0
+        ? buildToolsData(providerTools)
+        : buildOpenConnectorActionData(selectedOpenConnectorApp, mcpTools, t)
+    }
+    return buildToolsData(mcpTools ?? [])
+  }, [selectedOpenConnectorApp, providerTools, mcpTools, t])
 
   // Handle opening URL (website or folder)
   const handleOpenUrl = useCallback(async () => {
@@ -347,7 +390,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
   const handleDelete = useCallback(async () => {
     if (!source) return
     try {
-      await window.electronAPI.deleteSource(workspaceId, sourceSlug)
+      await window.electronAPI.deleteSource(workspaceId, baseSourceSlug)
       toast.success(t('sourceInfo.deletedSource', { name: source.config.name }))
       navigateToSource() // Navigate to source list, preserving filter
       onDelete?.()
@@ -356,7 +399,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
         description: err instanceof Error ? err.message : undefined,
       })
     }
-  }, [source, workspaceId, sourceSlug, onDelete, navigateToSource])
+  }, [source, workspaceId, baseSourceSlug, onDelete, navigateToSource, t])
 
   // Handle opening in new window
   const handleOpenInNewWindow = useCallback(() => {
@@ -364,7 +407,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
   }, [sourceSlug])
 
   // Get source name for header
-  const sourceName = source?.config.name || sourceSlug
+  const sourceName = selectedOpenConnectorApp?.name || source?.config.name || sourceSlug
 
   return (
     <Info_Page
@@ -374,24 +417,30 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
     >
       <Info_Page.Header
         title={sourceName}
-        titleMenu={
+        titleMenu={selectedOpenConnectorApp ? undefined : (
           <SourceMenu
-            sourceSlug={sourceSlug}
+            sourceSlug={baseSourceSlug}
             sourceName={sourceName}
             onOpenInNewWindow={handleOpenInNewWindow}
             onShowInFinder={handleOpenSourceFolder}
             onDelete={handleDelete}
           />
-        }
+        )}
       />
 
       {source && (
         <Info_Page.Content>
           {/* Hero: Avatar, title, and tagline */}
           <Info_Page.Hero
-            avatar={<SourceAvatar source={source} fluid />}
-            title={source.config.name}
-            tagline={source.config.tagline}
+            avatar={selectedOpenConnectorApp ? (
+              <div className="flex h-full w-full items-center justify-center rounded-[28px] bg-foreground/[0.05] text-6xl">
+                {selectedOpenConnectorApp.icon}
+              </div>
+            ) : (
+              <SourceAvatar source={source} fluid />
+            )}
+            title={selectedOpenConnectorApp?.name ?? source.config.name}
+            tagline={selectedOpenConnectorApp?.tagline ?? source.config.tagline}
           />
 
           {/* Disabled Warning */}
@@ -406,8 +455,8 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
 
           {/* Connection */}
           <Info_Section
-            title={t('sourceInfo.connection')}
-            description={getConnectionDescription(source, t)}
+            title={selectedOpenConnectorApp ? t('sourceInfo.openConnectorGateway') : t('sourceInfo.connection')}
+            description={selectedOpenConnectorApp ? t('sourceInfo.openConnectorGatewayDesc') : getConnectionDescription(source, t)}
             actions={
               // EditPopover for AI-assisted config.json editing with "Edit File" as secondary action
               <EditPopover
@@ -430,7 +479,10 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
                 </div>
               )}
             >
-              <Info_Table.Row label={t('common.type')} value={source.config.type.toUpperCase()} />
+              <Info_Table.Row label={t('common.type')} value={selectedOpenConnectorApp ? 'OPENCONNECTOR' : source.config.type.toUpperCase()} />
+              {selectedOpenConnectorApp && (
+                <Info_Table.Row label={t('sourceInfo.openConnectorGatewaySource')} value={source.config.name} />
+              )}
               {sourceUrl && (
                 <Info_Table.Row label={t('common.url')}>
                   <button
@@ -470,7 +522,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
           {source.config.type === 'mcp' && (
             <Info_Section
               title={t('sourceInfo.tools')}
-              description={t('sourceInfo.toolsDesc')}
+              description={selectedOpenConnectorApp ? t('sourceInfo.openConnectorProviderToolsDesc') : t('sourceInfo.toolsDesc')}
               actions={
                 // EditPopover for AI-assisted tool permissions editing
                 <EditPopover
@@ -492,14 +544,14 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
           )}
 
           {/* OpenConnector provider apps */}
-          {isOpenConnectorSource(source.config) && (
+          {isOpenConnectorSource(source.config) && !selectedOpenConnectorApp && (
             <Info_Section
               title={t('sourceInfo.openConnectorApps')}
               description={t('sourceInfo.openConnectorAppsDesc')}
             >
               <div className="grid gap-3 md:grid-cols-2">
                 {openConnectorApps.map((app) => {
-                  const actionCount = (mcpTools ?? []).filter((tool) => tool.name.toLowerCase().includes(app.id)).length
+                  const actionCount = getOpenConnectorActionCountForProvider(app, mcpTools ?? [])
                   return (
                     <div key={app.id} className="rounded-[12px] border border-border/60 bg-foreground/[0.02] p-4">
                       <div className="flex items-start gap-3">
@@ -524,6 +576,37 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
                     </div>
                   )
                 })}
+              </div>
+            </Info_Section>
+          )}
+
+          {selectedOpenConnectorApp && (
+            <Info_Section
+              title={t('sourceInfo.openConnectorSource')}
+              description={t('sourceInfo.openConnectorSourceDesc')}
+            >
+              <div className="rounded-[12px] border border-border/60 bg-foreground/[0.02] p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-foreground/[0.05] text-xl">
+                    {selectedOpenConnectorApp.icon}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      <span>{selectedOpenConnectorApp.name}</span>
+                      <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+                        {t('sourceInfo.openConnectorActionCount', { count: selectedOpenConnectorActionCount })}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">{selectedOpenConnectorApp.tagline}</p>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {selectedOpenConnectorApp.commonActions.slice(0, 4).map((action) => (
+                        <span key={action} className="rounded bg-foreground/[0.05] px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                          {action}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             </Info_Section>
           )}

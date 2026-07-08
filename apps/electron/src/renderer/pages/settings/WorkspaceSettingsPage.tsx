@@ -55,6 +55,7 @@ export default function WorkspaceSettingsPage() {
   const appShellContext = useAppShellContext()
   const activeWorkspaceId = appShellContext.activeWorkspaceId
   const onRefreshWorkspaces = appShellContext.onRefreshWorkspaces
+  const activeRemoteWorkspaceId = appShellContext.workspaces.find((workspace) => workspace.id === activeWorkspaceId)?.remoteServer?.remoteWorkspaceId ?? null
 
   // Workspace settings state
   const [wsName, setWsName] = useState('')
@@ -152,7 +153,7 @@ export default function WorkspaceSettingsPage() {
   useEffect(() => {
     if (!window.electronAPI) return
     const cleanup = window.electronAPI.onSourcesChanged((workspaceId: string, sources: LoadedSource[]) => {
-      if (workspaceId !== activeWorkspaceId) return
+      if (workspaceId !== activeWorkspaceId && workspaceId !== activeRemoteWorkspaceId) return
       setAvailableSources(sources)
       // Auto-heal: remove slugs for sources that no longer exist
       const validSlugs = new Set(sources.map(s => s.config.slug))
@@ -165,7 +166,7 @@ export default function WorkspaceSettingsPage() {
       })
     })
     return cleanup
-  }, [activeWorkspaceId])
+  }, [activeWorkspaceId, activeRemoteWorkspaceId])
 
   // Save workspace setting
   const updateWorkspaceSetting = useCallback(

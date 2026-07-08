@@ -83,6 +83,7 @@ export function isCompoundRoute(route: string): boolean {
  *   'sources/api' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'api' }, details: null }
  *   'sources/mcp' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'mcp' }, details: null }
  *   'sources/local' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'local' }, details: null }
+ *   'sources/openconnector' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'openconnector' }, details: null }
  *   'sources/source/github' -> { navigator: 'sources', details: { type: 'source', id: 'github' } }
  *   'sources/api/source/gmail' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'api' }, details: { type: 'source', id: 'gmail' } }
  *   'settings' -> { navigator: 'settings', details: null }  // navigator-only view
@@ -108,16 +109,16 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
     }
   }
 
-  // Sources navigator - supports type filters (api, mcp, local)
+  // Sources navigator - supports type filters (api, mcp, local, openconnector)
   if (first === 'sources') {
     if (segments.length === 1) {
       return { navigator: 'sources', details: null }
     }
 
-    // Check for type filter: sources/api, sources/mcp, sources/local
-    const validSourceTypes = ['api', 'mcp', 'local']
+    // Check for type filter: sources/api, sources/mcp, sources/local, sources/openconnector
+    const validSourceTypes = ['api', 'mcp', 'local', 'openconnector']
     if (validSourceTypes.includes(segments[1])) {
-      const sourceType = segments[1] as 'api' | 'mcp' | 'local'
+      const sourceType = segments[1] as 'api' | 'mcp' | 'local' | 'openconnector'
       const sourceFilter: SourceFilter = { kind: 'type', sourceType }
 
       // Check for source selection within filtered view: sources/api/source/{sourceSlug}
@@ -265,7 +266,7 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
   }
 
   if (parsed.navigator === 'sources') {
-    // Build base from filter (sources, sources/api, sources/mcp, sources/local)
+    // Build base from filter (sources, sources/api, sources/mcp, sources/local, sources/openconnector)
     let base = 'sources'
     if (parsed.sourceFilter?.kind === 'type') {
       base = `sources/${parsed.sourceFilter.sourceType}`

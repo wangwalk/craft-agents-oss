@@ -88,6 +88,11 @@ function validateProxyUrl(url: string): string | undefined {
   }
 }
 
+function getRuntimeEnvironment(): 'electron' | 'web' {
+  if (typeof window === 'undefined') return 'web'
+  return window.electronAPI?.getRuntimeEnvironment?.() ?? 'web'
+}
+
 // ============================================
 // Main Component
 // ============================================
@@ -111,7 +116,7 @@ export default function AppSettingsPage() {
   const [isSavingProxy, setIsSavingProxy] = useState(false)
 
   // Auto-update state (Check Now / Update Ready only shown in Electron, not WebUI)
-  const isElectron = window.electronAPI.getRuntimeEnvironment() === 'electron'
+  const isElectron = getRuntimeEnvironment() === 'electron'
   const updateChecker = useUpdateChecker()
   const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false)
 

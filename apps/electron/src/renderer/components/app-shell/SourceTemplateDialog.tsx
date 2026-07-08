@@ -11,8 +11,8 @@ import {
   buildSourceConfigFromTemplate,
   getSourceTemplates,
   normalizeOpenConnectorMcpUrl,
-} from '@craft-agent/shared/sources'
-import type { FolderSourceConfig } from '@craft-agent/shared/sources'
+} from '@craft-agent/shared/sources/source-templates'
+import type { FolderSourceConfig } from '@craft-agent/shared/sources/types'
 
 interface SourceTemplateDialogProps {
   open: boolean

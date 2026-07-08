@@ -33,6 +33,7 @@ export interface EntityPanelProps<T> {
   /** Extra data/aria attributes merged onto the inner list container.
    *  Use to set `data-list-role` so compact-mode CSS can target the right list. */
   containerProps?: Record<string, string>
+  multiSelect?: boolean
 }
 
 export function EntityPanel<T>({
@@ -45,6 +46,7 @@ export function EntityPanel<T>({
   emptyState,
   className,
   containerProps,
+  multiSelect = true,
 }: EntityPanelProps<T>) {
   const selectionStore = selection.useSelectionStore()
   const interactions = useEntityListInteractions<T>({
@@ -54,7 +56,7 @@ export function EntityPanel<T>({
       onNavigate: (item) => onItemClick(item),
       onActivate: (item) => onItemClick(item),
     },
-    multiSelect: true,
+    multiSelect,
     selectionStore,
   })
 
