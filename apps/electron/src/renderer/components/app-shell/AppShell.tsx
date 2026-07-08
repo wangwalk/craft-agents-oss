@@ -32,6 +32,7 @@ import {
   Bot,
   Info,
   MailOpen,
+  Plug,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
@@ -89,6 +90,7 @@ import { useSetAtom } from "jotai"
 import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter } from "../../../shared/types"
 import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
+import { openConnectorSourceItemsAtom } from "@/atoms/openconnector-sources"
 import { skillsAtom } from "@/atoms/skills"
 import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute } from "@/atoms/panel-stack"
 import { type SessionStatusId, type SessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
@@ -117,6 +119,8 @@ import {
 } from "@/contexts/NavigationContext"
 import type { SettingsSubpage } from "../../../shared/types"
 import { SourcesListPanel } from "./SourcesListPanel"
+import { SourceTemplateDialog } from "./SourceTemplateDialog"
+import { buildOpenConnectorVirtualSourceItems, type OpenConnectorVirtualSourceItem } from "@/lib/openconnector"
 import { SkillsListPanel } from "./SkillsListPanel"
 import { AutomationsListPanel } from "../automations/AutomationsListPanel"
 import { APP_EVENTS, AGENT_EVENTS, type AutomationFilterKind, AUTOMATION_TYPE_TO_FILTER_KIND } from "../automations/types"
@@ -141,6 +145,7 @@ import {
 import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
+import { isOpenConnectorSource } from "@craft-agent/shared/sources/source-templates"
 
 /**
  * AppShellProps - Minimal props interface for AppShell component
@@ -812,11 +817,16 @@ function AppShellContent({
   }, [])
   // Sources state (workspace-scoped)
   const [sources, setSources] = React.useState<LoadedSource[]>([])
+  const [openConnectorNavItems, setOpenConnectorNavItems] = React.useState<OpenConnectorVirtualSourceItem[]>([])
   // Sync sources to atom for NavigationContext auto-selection
   const setSourcesAtom = useSetAtom(sourcesAtom)
+  const setOpenConnectorSourceItems = useSetAtom(openConnectorSourceItemsAtom)
   React.useEffect(() => {
     setSourcesAtom(sources)
   }, [sources, setSourcesAtom])
+  React.useEffect(() => {
+    setOpenConnectorSourceItems(openConnectorNavItems)
+  }, [openConnectorNavItems, setOpenConnectorSourceItems])
 
   // Skills state (workspace-scoped)
   const [skills, setSkills] = React.useState<LoadedSkill[]>([])
@@ -827,6 +837,7 @@ function AppShellContent({
   }, [skills, setSkillsAtom])
   // Automations — state, handlers, loading, subscriptions
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId)
+  const activeRemoteWorkspaceId = activeWorkspace?.remoteServer?.remoteWorkspaceId ?? null
 
   // Send to Workspace dialog state (driven by sendToWorkspaceAtom set from SessionMenu/BatchSessionMenu)
   const sendToWorkspaceIds = useAtomValue(sendToWorkspaceAtom)
@@ -914,13 +925,46 @@ function AppShellContent({
   // Subscribe to live source updates (when sources are added/removed dynamically)
   React.useEffect(() => {
     const cleanup = window.electronAPI.onSourcesChanged((workspaceId, updatedSources) => {
-      if (workspaceId !== activeWorkspaceId) return
+      if (workspaceId !== activeWorkspaceId && workspaceId !== activeRemoteWorkspaceId) return
       // Clear icon cache so updated source icons are re-fetched on render
       clearSourceIconCaches()
       setSources(updatedSources || [])
     })
     return cleanup
-  }, [activeWorkspaceId])
+  }, [activeWorkspaceId, activeRemoteWorkspaceId])
+
+  React.useEffect(() => {
+    if (!activeWorkspaceId) {
+      setOpenConnectorNavItems([])
+      return
+    }
+
+    const openConnectorSources = sources.filter((source) => isOpenConnectorSource(source.config))
+    if (openConnectorSources.length === 0) {
+      setOpenConnectorNavItems([])
+      return
+    }
+
+    let cancelled = false
+
+    void Promise.all(
+      openConnectorSources.map(async (source) => {
+        try {
+          const result = await window.electronAPI.getMcpTools(activeWorkspaceId, source.config.slug)
+          return buildOpenConnectorVirtualSourceItems(source, result.tools ?? [])
+        } catch {
+          return buildOpenConnectorVirtualSourceItems(source, [])
+        }
+      })
+    ).then((itemsBySource) => {
+      if (cancelled) return
+      setOpenConnectorNavItems(itemsBySource.flat())
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeWorkspaceId, sources])
 
   // Subscribe to live skill updates (when skills are added/removed dynamically)
   React.useEffect(() => {
@@ -1041,9 +1085,9 @@ function AppShellContent({
   const ensureMessagesLoaded = useSetAtom(ensureSessionMessagesLoadedAtom)
 
   // Handle selecting a source from the list (preserves current filter type)
-  const handleSourceSelect = React.useCallback((source: LoadedSource) => {
+  const handleSourceSelect = React.useCallback((sourceId: string) => {
     if (!activeWorkspaceId) return
-    navigateToSource(source.config.slug)
+    navigateToSource(sourceId)
   }, [activeWorkspaceId, navigateToSource])
 
   // Handle selecting a skill from the list
@@ -1413,7 +1457,7 @@ function AppShellContent({
 
   // Count sources by type for the Sources dropdown subcategories
   const sourceTypeCounts = useMemo(() => {
-    const counts = { api: 0, mcp: 0, local: 0 }
+    const counts = { api: 0, mcp: 0, local: 0, openconnector: openConnectorNavItems.length }
     for (const source of sources) {
       const t = source.config.type
       if (t === 'api' || t === 'mcp' || t === 'local') {
@@ -1421,7 +1465,7 @@ function AppShellContent({
       }
     }
     return counts
-  }, [sources])
+  }, [openConnectorNavItems.length, sources])
 
   // Count automations by type for the Automations dropdown subcategories
   const automationTypeCounts = useMemo(() => {
@@ -1694,6 +1738,10 @@ function AppShellContent({
     navigate(routes.view.sourcesLocal())
   }, [])
 
+  const handleSourcesOpenConnectorClick = useCallback(() => {
+    navigate(routes.view.sourcesOpenConnector())
+  }, [])
+
   // Handler for skills view
   const handleSkillsClick = useCallback(() => {
     navigate(routes.view.skills())
@@ -1743,6 +1791,8 @@ function AppShellContent({
   // their request in the popover UI before opening a new chat window.
   // add-source variants: add-source (generic), add-source-api, add-source-mcp, add-source-local
   const [editPopoverOpen, setEditPopoverOpen] = useState<'statuses' | 'labels' | 'views' | 'add-source' | 'add-source-api' | 'add-source-mcp' | 'add-source-local' | 'add-skill' | 'add-label' | 'automation-config' | null>(null)
+  const [sourceTemplateDialogOpen, setSourceTemplateDialogOpen] = useState(false)
+  const sourceTemplateFallbackRef = useRef<'add-source' | 'add-source-api' | 'add-source-mcp' | 'add-source-local'>('add-source')
 
   // Stores the Y position of the last right-clicked sidebar item so the EditPopover
   // appears near it rather than at a fixed location. Updated synchronously before
@@ -1838,13 +1888,16 @@ function AppShellContent({
     }
   }, [activeWorkspace?.id])
 
-  // Handler for "Add Source" context menu action
-  // Opens the EditPopover for adding a new source
-  // Optional sourceType param allows filter-aware context (from subcategory menus or filtered views)
-  const openAddSource = useCallback((sourceType?: 'api' | 'mcp' | 'local') => {
+  // Handler for "Add Source" actions. Opens the template picker first; the picker
+  // still offers an advanced/custom path that falls back to the agent-driven EditPopover.
+  const openAddSource = useCallback((sourceType?: 'api' | 'mcp' | 'local' | 'openconnector') => {
     captureContextMenuPosition()
-    const key = sourceType ? `add-source-${sourceType}` as const : 'add-source' as const
-    setTimeout(() => setEditPopoverOpen(key), 50)
+    if (sourceType === 'openconnector') {
+      sourceTemplateFallbackRef.current = 'add-source-mcp'
+    } else {
+      sourceTemplateFallbackRef.current = sourceType ? `add-source-${sourceType}` as const : 'add-source'
+    }
+    setSourceTemplateDialogOpen(true)
   }, [captureContextMenuPosition])
 
   // Handler for "Add Skill" context menu action
@@ -1959,13 +2012,17 @@ function AppShellContent({
 
     // 3. Sources, Skills, Settings
     result.push({ id: 'nav:sources', type: 'nav', action: handleSourcesClick })
+    result.push({ id: 'nav:sources:api', type: 'nav', action: handleSourcesApiClick })
+    result.push({ id: 'nav:sources:mcp', type: 'nav', action: handleSourcesMcpClick })
+    result.push({ id: 'nav:sources:local', type: 'nav', action: handleSourcesLocalClick })
+    result.push({ id: 'nav:sources:openconnector', type: 'nav', action: handleSourcesOpenConnectorClick })
     result.push({ id: 'nav:skills', type: 'nav', action: handleSkillsClick })
     result.push({ id: 'nav:automations', type: 'nav', action: handleAutomationsClick })
     result.push({ id: 'nav:settings', type: 'nav', action: () => handleSettingsClick() })
     result.push({ id: 'nav:whats-new', type: 'nav', action: handleWhatsNewClick })
 
     return result
-  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
+  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleSessionStatusClick, effectiveSessionStatuses, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSourcesApiClick, handleSourcesMcpClick, handleSourcesLocalClick, handleSourcesOpenConnectorClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -2408,6 +2465,18 @@ function AppShellContent({
                             type: 'sources' as const,
                             onAddSource: () => openAddSource('local'),
                             sourceType: 'local',
+                          },
+                        },
+                        {
+                          id: "nav:sources:openconnector",
+                          title: t("sidebar.openConnector"),
+                          label: String(sourceTypeCounts.openconnector),
+                          icon: Plug,
+                          variant: (sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'openconnector') ? "default" : "ghost",
+                          onClick: handleSourcesOpenConnectorClick,
+                          contextMenu: {
+                            type: 'sources' as const,
+                            onAddSource: () => openAddSource('openconnector'),
                           },
                         },
                       ],
@@ -3110,18 +3179,11 @@ function AppShellContent({
                   )}
                   {/* Add Source button (only for sources mode) - uses filter-aware edit config */}
                   {isSourcesNavigation(navState) && activeWorkspace && (
-                    <EditPopover
-                      trigger={
-                        <HeaderIconButton
-                          icon={<Plus className="h-4 w-4" />}
-                          tooltip={t("sidebarMenu.addSource")}
-                          data-tutorial="add-source-button"
-                        />
-                      }
-                      {...getEditConfig(
-                        sourceFilter?.kind === 'type' ? `add-source-${sourceFilter.sourceType}` as EditContextKey : 'add-source',
-                        activeWorkspace.rootPath
-                      )}
+                    <HeaderIconButton
+                      icon={<Plus className="h-4 w-4" />}
+                      tooltip={t("sidebarMenu.addSource")}
+                      data-tutorial="add-source-button"
+                      onClick={() => openAddSource(sourceFilter?.kind === 'type' ? sourceFilter.sourceType : undefined)}
                     />
                   )}
                   {/* Add Skill button (only for skills mode) */}
@@ -3159,6 +3221,7 @@ function AppShellContent({
                 sources={sources}
                 sourceFilter={sourceFilter}
                 workspaceRootPath={activeWorkspace?.rootPath}
+                onAddSource={() => openAddSource(sourceFilter?.kind === 'type' ? sourceFilter.sourceType : undefined)}
                 onDeleteSource={handleDeleteSource}
                 onSourceClick={handleSourceSelect}
                 selectedSourceSlug={isSourcesNavigation(navState) && navState.details ? navState.details.sourceSlug : null}
@@ -3350,6 +3413,26 @@ function AppShellContent({
        */}
       {activeWorkspace && (
         <>
+          <SourceTemplateDialog
+            open={sourceTemplateDialogOpen}
+            workspaceId={activeWorkspaceId}
+            onOpenChange={setSourceTemplateDialogOpen}
+            onCreated={(source) => {
+              setSources((current) => current.some((item) => item.config.slug === source.slug) ? current : [
+                ...current,
+                {
+                  workspaceId: activeWorkspace.id,
+                  workspaceRootPath: activeWorkspace.rootPath,
+                  folderPath: `${activeWorkspace.rootPath}/sources/${source.slug}`,
+                  config: source,
+                  guide: { raw: '' },
+                },
+              ])
+              navigate(routes.view.sourcesOpenConnector())
+            }}
+            onCustomSource={() => setTimeout(() => setEditPopoverOpen(sourceTemplateFallbackRef.current), 50)}
+          />
+
           {/* Configure Statuses EditPopover - anchored near sidebar */}
           <EditPopover
             open={editPopoverOpen === 'statuses'}

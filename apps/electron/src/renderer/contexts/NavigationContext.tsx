@@ -72,6 +72,7 @@ import {
 } from '../../shared/types'
 import { sessionMetaMapAtom, updateSessionMetaAtom, type SessionMeta } from '@/atoms/sessions'
 import { sourcesAtom } from '@/atoms/sources'
+import { openConnectorSourceItemsAtom } from '@/atoms/openconnector-sources'
 import { skillsAtom } from '@/atoms/skills'
 import {
   panelStackAtom,
@@ -175,6 +176,7 @@ export function NavigationProvider({
 
   // Read sources from atom (populated by AppShell)
   const sources = useAtomValue(sourcesAtom)
+  const openConnectorSourceItems = useAtomValue(openConnectorSourceItemsAtom)
 
   // Read skills from atom (populated by AppShell)
   const skills = useAtomValue(skillsAtom)
@@ -591,10 +593,13 @@ export function NavigationProvider({
       if (!filter) {
         return sources[0]?.config.slug ?? null
       }
+      if (filter.sourceType === 'openconnector') {
+        return openConnectorSourceItems[0]?.id ?? null
+      }
       const filtered = sources.filter(s => s.config.type === filter.sourceType)
       return filtered[0]?.config.slug ?? null
     },
-    [sources]
+    [sources, openConnectorSourceItems]
   )
 
   const getFirstSkillSlug = useCallback(
@@ -1175,6 +1180,9 @@ export function NavigationProvider({
           return
         case 'local':
           navigate(routes.view.sourcesLocal(sourceSlug))
+          return
+        case 'openconnector':
+          navigate(routes.view.sourcesOpenConnector(sourceSlug))
           return
       }
     }

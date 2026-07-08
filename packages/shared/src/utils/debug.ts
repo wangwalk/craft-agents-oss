@@ -12,6 +12,10 @@ function isCliJsonOnlyMode(): boolean {
 type Environment = 'electron-main' | 'electron-renderer' | 'cli';
 
 function detectEnvironment(): Environment {
+  const globalScope = globalThis as { window?: unknown; document?: unknown };
+  if (typeof globalScope.window !== 'undefined' && typeof globalScope.document !== 'undefined') {
+    return 'electron-renderer';
+  }
   // No process object means we're in a browser/renderer context
   if (typeof process === 'undefined') {
     return 'electron-renderer';
@@ -36,10 +40,14 @@ function getElectronLog(): { info?: (message: string) => void } | null {
     return (electronLog as { info?: (message: string) => void } | null) ?? null;
   }
   electronLogChecked = true;
+  if (detectEnvironment() !== 'electron-main') {
+    electronLog = null;
+    return null;
+  }
   try {
-    // Optional dependency - only available in Electron main process.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const loaded = require('electron-log/main');
+    // Resolve lazily so browser bundles never statically pull in electron-log/main.
+    const nodeRequire = Function('return require')() as (id: string) => unknown;
+    const loaded = nodeRequire('electron-log/main') as { default?: unknown } | undefined;
     electronLog = loaded?.default ?? loaded ?? null;
   } catch {
     electronLog = null;

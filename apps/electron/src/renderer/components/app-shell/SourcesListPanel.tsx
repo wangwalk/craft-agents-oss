@@ -11,7 +11,10 @@ import { SourceMenu } from './SourceMenu'
 import { SendResourceToWorkspaceDialog } from './SendResourceToWorkspaceDialog'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { EditPopover, getEditConfig, type EditContextKey } from '@/components/ui/EditPopover'
-import type { LoadedSource, SourceConnectionStatus, SourceFilter } from '../../../shared/types'
+import { openConnectorSourceItemsAtom } from '@/atoms/openconnector-sources'
+import { useAtomValue } from 'jotai'
+import type { OpenConnectorVirtualSourceItem } from '@/lib/openconnector'
+import type { LoadedSource, SourceFilter } from '../../../shared/types'
 
 const SOURCE_TYPE_CONFIG: Record<string, { labelKey: string; colorClass: string }> = {
   mcp: { labelKey: 'sourcesList.typeMcp', colorClass: 'bg-accent/10 text-accent' },
@@ -33,12 +36,17 @@ const SOURCE_TYPE_FILTER_LABEL_KEYS: Record<string, string> = {
   local: 'sourcesList.filterLocalFolder',
 }
 
+type SourcesListItem =
+  | { kind: 'source'; id: string; source: LoadedSource }
+  | { kind: 'openconnector'; id: string; provider: OpenConnectorVirtualSourceItem }
+
 export interface SourcesListPanelProps {
   sources: LoadedSource[]
   sourceFilter?: SourceFilter | null
   workspaceRootPath?: string
+  onAddSource?: () => void
   onDeleteSource: (sourceSlug: string) => void
-  onSourceClick: (source: LoadedSource) => void
+  onSourceClick: (sourceId: string) => void
   selectedSourceSlug?: string | null
   localMcpEnabled?: boolean
   className?: string
@@ -48,6 +56,7 @@ export function SourcesListPanel({
   sources,
   sourceFilter,
   workspaceRootPath,
+  onAddSource,
   onDeleteSource,
   onSourceClick,
   selectedSourceSlug,
@@ -56,22 +65,47 @@ export function SourcesListPanel({
 }: SourcesListPanelProps) {
   const { t } = useTranslation()
   const { workspaces, activeWorkspaceId } = useAppShellContext()
+  const openConnectorItems = useAtomValue(openConnectorSourceItemsAtom)
   const hasOtherWorkspaces = workspaces.length > 1
+  const { clearMultiSelect } = sourceSelection.useSelection()
 
   // Send to Workspace dialog state
   const [sendDialogOpen, setSendDialogOpen] = React.useState(false)
   const [sendResourceSlug, setSendResourceSlug] = React.useState<string | null>(null)
   const [sendResourceLabel, setSendResourceLabel] = React.useState('')
 
-  const filteredSources = React.useMemo(() => {
-    if (!sourceFilter) return sources
-    return sources.filter(s => s.config.type === sourceFilter.sourceType)
-  }, [sources, sourceFilter])
+  const filteredItems = React.useMemo<SourcesListItem[]>(() => {
+    if (sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'openconnector') {
+      return openConnectorItems.map((item) => ({
+        kind: 'openconnector',
+        id: item.id,
+        provider: item,
+      }))
+    }
+
+    const filteredSources = !sourceFilter
+      ? sources
+      : sources.filter((source) => source.config.type === sourceFilter.sourceType)
+
+    return filteredSources.map((source) => ({
+      kind: 'source',
+      id: source.config.slug,
+      source,
+    }))
+  }, [openConnectorItems, sourceFilter, sources])
+
+  React.useEffect(() => {
+    if (sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'openconnector') {
+      clearMultiSelect()
+    }
+  }, [clearMultiSelect, sourceFilter])
 
   const emptyMessage = React.useMemo(() => {
     if (sourceFilter?.kind === 'type') {
       const filterLabelKey = SOURCE_TYPE_FILTER_LABEL_KEYS[sourceFilter.sourceType]
-      const filterLabel = filterLabelKey ? t(filterLabelKey) : sourceFilter.sourceType
+      const filterLabel = sourceFilter.sourceType === 'openconnector'
+        ? 'OpenConnector'
+        : (filterLabelKey ? t(filterLabelKey) : sourceFilter.sourceType)
       return t('sourcesList.noSourcesOfType', { type: filterLabel })
     }
     return t('sourcesList.noSourcesConfigured')
@@ -79,13 +113,14 @@ export function SourcesListPanel({
 
   return (
     <>
-    <EntityPanel<LoadedSource>
-      items={filteredSources}
-      getId={(s) => s.config.slug}
+    <EntityPanel<SourcesListItem>
+      items={filteredItems}
+      getId={(item) => item.id}
       selection={sourceSelection}
       selectedId={selectedSourceSlug}
-      onItemClick={onSourceClick}
+      onItemClick={(item) => onSourceClick(item.id)}
       className={className}
+      multiSelect={!(sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'openconnector')}
       containerProps={{ 'data-list-role': 'sources' }}
       emptyState={
         <EntityListEmptyScreen
@@ -95,22 +130,66 @@ export function SourcesListPanel({
           docKey="sources"
         >
           {workspaceRootPath && (
-            <EditPopover
-              align="center"
-              trigger={
-                <button className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors">
-                  {t('sourcesList.addSource')}
-                </button>
-              }
-              {...getEditConfig(
-                sourceFilter?.kind === 'type' ? `add-source-${sourceFilter.sourceType}` as EditContextKey : 'add-source',
-                workspaceRootPath
-              )}
-            />
+            onAddSource ? (
+              <button
+                onClick={onAddSource}
+                className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors"
+              >
+                {t('sourcesList.addSource')}
+              </button>
+            ) : (
+              <EditPopover
+                align="center"
+                trigger={
+                  <button className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors">
+                    {t('sourcesList.addSource')}
+                  </button>
+                }
+                {...getEditConfig(
+                  sourceFilter?.kind === 'type' && sourceFilter.sourceType !== 'openconnector'
+                    ? `add-source-${sourceFilter.sourceType}` as EditContextKey
+                    : 'add-source',
+                  workspaceRootPath
+                )}
+              />
+            )
           )}
         </EntityListEmptyScreen>
       }
-      mapItem={(source) => {
+      mapItem={(item) => {
+        if (item.kind === 'openconnector') {
+          const { provider } = item
+          const connectionStatus = deriveConnectionStatus(provider.source, localMcpEnabled)
+          const statusConfig = SOURCE_STATUS_CONFIG[connectionStatus]
+          return {
+            icon: (
+              <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-foreground/[0.05] text-lg">
+                {provider.providerApp.icon}
+              </div>
+            ),
+            title: provider.providerApp.name,
+            badges: (
+              <>
+                <EntityListBadge colorClass="bg-accent/10 text-accent">OpenConnector</EntityListBadge>
+                {statusConfig && (
+                  <EntityListBadge colorClass={statusConfig.colorClass} tooltip={provider.source.config.connectionError || undefined} className="cursor-default">
+                    {t(statusConfig.labelKey)}
+                  </EntityListBadge>
+                )}
+                <span className="truncate">
+                  {provider.providerApp.tagline}
+                </span>
+              </>
+            ),
+            trailing: (
+              <span className="truncate text-xs text-muted-foreground">
+                {t('sourceInfo.openConnectorActionCount', { count: provider.actionCount })}
+              </span>
+            ),
+          }
+        }
+
+        const source = item.source
         const connectionStatus = deriveConnectionStatus(source, localMcpEnabled)
         const typeConfig = SOURCE_TYPE_CONFIG[source.config.type]
         const statusConfig = SOURCE_STATUS_CONFIG[connectionStatus]

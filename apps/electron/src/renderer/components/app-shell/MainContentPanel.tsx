@@ -246,7 +246,7 @@ export function MainContentPanel({
 
   // Sources navigator - show source info, multi-select panel, or empty state
   if (isSourcesNavigation(navState)) {
-    if (isSourceMultiSelectActive) {
+    if (isSourceMultiSelectActive && navState.filter?.sourceType !== 'openconnector') {
       return wrapWithStoplight(
         <Panel variant="grow" className={className}>
           <MultiSelectPanel

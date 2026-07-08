@@ -150,8 +150,13 @@ const WEB_PREVIEWABLE_EXTENSIONS = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico',
 ])
 
+function getRuntimeEnvironment(): 'electron' | 'web' {
+  if (typeof window === 'undefined') return 'web'
+  return window.electronAPI?.getRuntimeEnvironment?.() ?? 'web'
+}
+
 /** True when running in web UI (browser) rather than Electron. */
-const isWebMode = window.electronAPI.getRuntimeEnvironment() === 'web'
+const isWebMode = getRuntimeEnvironment() === 'web'
 
 /**
  * Constructs a thumbnail:// protocol URL for a given file path.

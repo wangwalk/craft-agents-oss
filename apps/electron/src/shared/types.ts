@@ -798,7 +798,7 @@ export interface SessionsNavigationState {
  */
 export interface SourceFilter {
   kind: 'type'
-  sourceType: 'api' | 'mcp' | 'local'
+  sourceType: 'api' | 'mcp' | 'local' | 'openconnector'
 }
 
 /**
@@ -892,6 +892,9 @@ export const getNavigationStateKey = (state: NavigationState): string => {
     if (state.details) {
       return `sources/source/${state.details.sourceSlug}`
     }
+    if (state.filter?.kind === 'type') {
+      return `sources/${state.filter.sourceType}`
+    }
     return 'sources'
   }
   if (state.navigator === 'skills') {
@@ -926,6 +929,10 @@ export const getNavigationStateKey = (state: NavigationState): string => {
 export const parseNavigationStateKey = (key: string): NavigationState | null => {
   // Handle sources
   if (key === 'sources') return { navigator: 'sources', details: null }
+  if (key === 'sources/api') return { navigator: 'sources', filter: { kind: 'type', sourceType: 'api' }, details: null }
+  if (key === 'sources/mcp') return { navigator: 'sources', filter: { kind: 'type', sourceType: 'mcp' }, details: null }
+  if (key === 'sources/local') return { navigator: 'sources', filter: { kind: 'type', sourceType: 'local' }, details: null }
+  if (key === 'sources/openconnector') return { navigator: 'sources', filter: { kind: 'type', sourceType: 'openconnector' }, details: null }
   if (key.startsWith('sources/source/')) {
     const sourceSlug = key.slice(15)
     if (sourceSlug) {
