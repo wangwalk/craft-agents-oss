@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAtomValue } from 'jotai'
 import { sourcesAtom } from '@/atoms/sources'
 import {
@@ -8,6 +8,43 @@ import {
   resolveOpenConnectorRuntimeBaseUrl,
   type OpenConnectorRuntimeSnapshot,
 } from '@/lib/openconnector-runtime'
+import type { LoadedSource } from '../../shared/types'
+
+const snapshotCache = new Map<string, OpenConnectorRuntimeSnapshot>()
+const snapshotRequests = new Map<string, Promise<OpenConnectorRuntimeSnapshot>>()
+const snapshotListeners = new Map<string, Set<(snapshot: OpenConnectorRuntimeSnapshot) => void>>()
+
+function runtimeCacheKey(gatewaySource: LoadedSource | null): string {
+  if (!gatewaySource) return 'unconfigured'
+  // Include the source config so URL/auth edits cannot reuse a stale snapshot.
+  return `${gatewaySource.workspaceId}:${JSON.stringify(gatewaySource.config)}`
+}
+
+async function loadSharedSnapshot(gatewaySource: LoadedSource | null): Promise<OpenConnectorRuntimeSnapshot> {
+  const key = runtimeCacheKey(gatewaySource)
+  const existing = snapshotRequests.get(key)
+  if (existing) return existing
+
+  const request = loadOpenConnectorRuntimeSnapshot(gatewaySource)
+    .then((snapshot) => {
+      snapshotCache.set(key, snapshot)
+      for (const listener of snapshotListeners.get(key) ?? []) listener(snapshot)
+      return snapshot
+    })
+    .finally(() => snapshotRequests.delete(key))
+  snapshotRequests.set(key, request)
+  return request
+}
+
+function subscribeToSnapshot(key: string, listener: (snapshot: OpenConnectorRuntimeSnapshot) => void): () => void {
+  const listeners = snapshotListeners.get(key) ?? new Set()
+  listeners.add(listener)
+  snapshotListeners.set(key, listeners)
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) snapshotListeners.delete(key)
+  }
+}
 
 export interface UseOpenConnectorRuntimeResult extends OpenConnectorRuntimeSnapshot {
   loading: boolean
@@ -19,7 +56,10 @@ export function useOpenConnectorRuntime(): UseOpenConnectorRuntimeResult {
   const sources = useAtomValue(sourcesAtom)
   const gatewaySource = useMemo(() => findOpenConnectorGatewaySource(sources), [sources])
   const baseUrl = useMemo(() => resolveOpenConnectorRuntimeBaseUrl(gatewaySource), [gatewaySource])
-  const [snapshot, setSnapshot] = useState<OpenConnectorRuntimeSnapshot>({
+  const cacheKey = runtimeCacheKey(gatewaySource)
+  const activeCacheKeyRef = useRef(cacheKey)
+  activeCacheKeyRef.current = cacheKey
+  const [snapshot, setSnapshot] = useState<OpenConnectorRuntimeSnapshot>(() => snapshotCache.get(cacheKey) ?? {
     baseUrl,
     gatewaySource,
     authSession: null,
@@ -30,12 +70,14 @@ export function useOpenConnectorRuntime(): UseOpenConnectorRuntimeResult {
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
+    const requestKey = runtimeCacheKey(gatewaySource)
     setLoading(true)
     setError(null)
     try {
-      const nextSnapshot = await loadOpenConnectorRuntimeSnapshot(gatewaySource)
-      setSnapshot(nextSnapshot)
+      const nextSnapshot = await loadSharedSnapshot(gatewaySource)
+      if (activeCacheKeyRef.current === requestKey) setSnapshot(nextSnapshot)
     } catch (caught) {
+      if (activeCacheKeyRef.current !== requestKey) return
       setSnapshot({
         baseUrl,
         gatewaySource,
@@ -45,13 +87,29 @@ export function useOpenConnectorRuntime(): UseOpenConnectorRuntimeResult {
       })
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
-      setLoading(false)
+      if (activeCacheKeyRef.current === requestKey) setLoading(false)
     }
   }, [baseUrl, gatewaySource])
 
+  useEffect(() => subscribeToSnapshot(cacheKey, setSnapshot), [cacheKey])
+
   useEffect(() => {
+    const cached = snapshotCache.get(cacheKey)
+    if (cached) {
+      setSnapshot(cached)
+      setError(null)
+      setLoading(false)
+      return
+    }
+    setSnapshot({
+      baseUrl,
+      gatewaySource,
+      authSession: null,
+      data: emptyOpenConnectorAppData,
+      healthOk: false,
+    })
     void refresh()
-  }, [refresh])
+  }, [baseUrl, cacheKey, gatewaySource, refresh])
 
   return {
     ...snapshot,

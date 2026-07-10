@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { navigate, routes } from '@/lib/navigate'
 import { useOpenConnectorRuntime } from '@/hooks/useOpenConnectorRuntime'
+import { useActiveWorkspace } from '@/context/AppShellContext'
 import {
   compactOpenConnectorJson,
   createOpenConnectorOverviewSummary,
@@ -29,13 +30,20 @@ export interface OpenConnectorConsolePageProps {
 
 export function OpenConnectorConsolePage({ section, details }: OpenConnectorConsolePageProps) {
   const runtime = useOpenConnectorRuntime()
+  const activeWorkspace = useActiveWorkspace()
   const data = runtime.data
   const summary = createOpenConnectorOverviewSummary(data)
+  const isRemoteRuntime = Boolean(activeWorkspace?.remoteServer)
+  const canOpenConsole = Boolean(runtime.baseUrl && (!isRemoteRuntime || !isLoopbackUrl(runtime.baseUrl)))
+  const externalBaseUrl = canOpenConsole ? runtime.baseUrl : null
+  const runtimeLabel = isRemoteRuntime
+    ? `Remote runtime · ${activeWorkspace?.name ?? 'workspace'}`
+    : 'Local runtime'
 
   const openRuntimeUrl = React.useCallback((path = '') => {
-    if (!runtime.baseUrl) return
+    if (!runtime.baseUrl || !canOpenConsole) return
     void window.electronAPI.openUrl(`${runtime.baseUrl}${path}`)
-  }, [runtime.baseUrl])
+  }, [canOpenConsole, runtime.baseUrl])
 
   const headerTitle = sectionTitle(section)
 
@@ -44,21 +52,28 @@ export function OpenConnectorConsolePage({ section, details }: OpenConnectorCons
       <div className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="truncate text-lg font-semibold">OpenConnector · {headerTitle}</h1>
+            <h1 className="truncate text-lg font-semibold">{headerTitle}</h1>
             {runtime.loading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
           </div>
-          <p className="mt-1 truncate text-xs text-muted-foreground">
-            {runtime.baseUrl ? runtime.baseUrl : 'No OpenConnector gateway source configured'}
-          </p>
+          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+            <span className={`h-1.5 w-1.5 rounded-full ${runtime.error ? 'bg-destructive' : runtime.healthOk ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+            <span className="truncate">{runtime.gatewaySource ? runtimeLabel : 'Gateway not configured'}</span>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => void runtime.refresh()}>
             <RefreshCw className="h-4 w-4" />
             Refresh
           </Button>
-          <Button variant="outline" size="sm" disabled={!runtime.baseUrl} onClick={() => openRuntimeUrl()}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!canOpenConsole}
+            title={runtime.baseUrl && !canOpenConsole ? 'The console is bound to the remote host and is not directly reachable from this Mac.' : undefined}
+            onClick={() => openRuntimeUrl()}
+          >
             <ArrowUpRight className="h-4 w-4" />
-            Open Console
+            {isRemoteRuntime && !canOpenConsole ? 'Console on VPS' : 'Open Console'}
           </Button>
         </div>
       </div>
@@ -67,22 +82,31 @@ export function OpenConnectorConsolePage({ section, details }: OpenConnectorCons
         {!runtime.gatewaySource ? (
           <SetupEmptyState />
         ) : runtime.authSession && !runtime.authSession.authenticated ? (
-          <LockedState baseUrl={runtime.baseUrl} />
+          <LockedState baseUrl={externalBaseUrl} />
         ) : runtime.error ? (
-          <RuntimeError message={runtime.error} baseUrl={runtime.baseUrl} onOpen={() => openRuntimeUrl()} />
+          <RuntimeError message={runtime.error} baseUrl={externalBaseUrl} onOpen={() => openRuntimeUrl()} />
         ) : (
           <>
-            {section === 'overview' ? <OverviewSection data={data} summary={summary} healthOk={runtime.healthOk} baseUrl={runtime.baseUrl} onOpen={openRuntimeUrl} /> : null}
-            {section === 'providers' ? <ProvidersSection data={data} selectedService={details?.type === 'provider' ? details.service : null} baseUrl={runtime.baseUrl} /> : null}
-            {section === 'actions' ? <ActionsSection data={data} selectedActionId={details?.type === 'action' ? details.actionId : null} baseUrl={runtime.baseUrl} gatewaySource={runtime.gatewaySource} /> : null}
+            {section === 'overview' ? <OverviewSection data={data} summary={summary} healthOk={runtime.healthOk} baseUrl={externalBaseUrl} onOpen={openRuntimeUrl} /> : null}
+            {section === 'providers' ? <ProvidersSection data={data} selectedService={details?.type === 'provider' ? details.service : null} baseUrl={externalBaseUrl} /> : null}
+            {section === 'actions' ? <ActionsSection data={data} selectedActionId={details?.type === 'action' ? details.actionId : null} baseUrl={externalBaseUrl} gatewaySource={runtime.gatewaySource} /> : null}
             {section === 'runs' ? <RunsSection runs={data.runs} /> : null}
-            {section === 'api-keys' ? <ApiKeysSection tokens={data.runtimeTokens} baseUrl={runtime.baseUrl} /> : null}
-            {section === 'docs' ? <DocsSection baseUrl={runtime.baseUrl} onOpen={openRuntimeUrl} /> : null}
+            {section === 'api-keys' ? <ApiKeysSection tokens={data.runtimeTokens} baseUrl={externalBaseUrl} /> : null}
+            {section === 'docs' ? <DocsSection baseUrl={externalBaseUrl} onOpen={openRuntimeUrl} /> : null}
           </>
         )}
       </div>
     </div>
   )
+}
+
+function isLoopbackUrl(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase()
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+  } catch {
+    return false
+  }
 }
 
 function sectionTitle(section: OpenConnectorSection): string {
@@ -151,7 +175,9 @@ function OverviewSection({
               {healthOk ? <CheckCircle2 className="h-5 w-5 text-emerald-500" /> : <AlertCircle className="h-5 w-5 text-amber-500" />}
               <h2 className="text-base font-semibold">Runtime {healthOk ? 'ready' : 'reachable via admin API'}</h2>
             </div>
-            <p className="mt-1 text-sm text-muted-foreground">{baseUrl ?? 'No runtime URL resolved'}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {healthOk ? 'Catalog and admin APIs are reachable through Craft Server.' : 'Check the gateway and runtime process.'}
+            </p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" disabled={!baseUrl} onClick={() => onOpen('/docs')}>Docs</Button>
@@ -176,47 +202,119 @@ function OverviewSection({
   )
 }
 
+type ProviderStatusFilter = 'all' | 'connected' | 'no-setup' | 'needs-setup'
+type ProviderSort = 'recommended' | 'name' | 'actions'
+
+const PROVIDER_PAGE_SIZE = 60
+
 function ProvidersSection({ data, selectedService, baseUrl }: { data: OpenConnectorAppData; selectedService: string | null; baseUrl: string | null }) {
   const [query, setQuery] = React.useState('')
+  const [statusFilter, setStatusFilter] = React.useState<ProviderStatusFilter>('all')
+  const [category, setCategory] = React.useState('all')
+  const [sort, setSort] = React.useState<ProviderSort>('recommended')
+  const [visibleCount, setVisibleCount] = React.useState(PROVIDER_PAGE_SIZE)
+  const selected = selectedService ? data.providers.find((provider) => provider.service === selectedService) : null
+
+  const categories = React.useMemo(() => Array.from(
+    new Set(data.providers.flatMap((provider) => provider.categories)),
+  ).sort((a, b) => a.localeCompare(b)), [data.providers])
+
   const providers = React.useMemo(() => {
     const needle = query.trim().toLowerCase()
     return data.providers
       .filter((provider) => {
-        if (!needle) return true
-        return [provider.service, provider.displayName, provider.categories.join(' ')].join(' ').toLowerCase().includes(needle)
+        const status = resolveOpenConnectorProviderConnectionStatus(provider, data.connections, data.oauthConfigs)
+        if (needle && ![provider.service, provider.displayName, provider.categories.join(' ')].join(' ').toLowerCase().includes(needle)) return false
+        if (category !== 'all' && !provider.categories.includes(category)) return false
+        if (statusFilter === 'connected' && !status.connected) return false
+        if (statusFilter === 'no-setup' && !status.noSetupRequired) return false
+        if (statusFilter === 'needs-setup' && (status.connected || status.noSetupRequired)) return false
+        return true
       })
-      .sort((a, b) => a.displayName.localeCompare(b.displayName))
-  }, [data.providers, query])
-  const selected = selectedService ? data.providers.find((provider) => provider.service === selectedService) : null
+      .sort((a, b) => {
+        if (sort === 'actions') return b.actions.length - a.actions.length || a.displayName.localeCompare(b.displayName)
+        if (sort === 'recommended') {
+          const aStatus = resolveOpenConnectorProviderConnectionStatus(a, data.connections, data.oauthConfigs)
+          const bStatus = resolveOpenConnectorProviderConnectionStatus(b, data.connections, data.oauthConfigs)
+          const score = (status: typeof aStatus) => status.connected ? 2 : status.noSetupRequired ? 1 : 0
+          const statusOrder = score(bStatus) - score(aStatus)
+          if (statusOrder !== 0) return statusOrder
+        }
+        return a.displayName.localeCompare(b.displayName)
+      })
+  }, [category, data.connections, data.oauthConfigs, data.providers, query, sort, statusFilter])
+
+  React.useEffect(() => {
+    setVisibleCount(PROVIDER_PAGE_SIZE)
+  }, [category, query, sort, statusFilter])
 
   if (selected) {
     return <ProviderDetail provider={selected} data={data} baseUrl={baseUrl} />
   }
 
+  const visibleProviders = providers.slice(0, visibleCount)
+
   return (
     <div className="space-y-4">
-      <SearchBox value={query} onChange={setQuery} placeholder="Search providers" />
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {providers.map((provider) => {
+      <div className="sticky top-0 z-10 -mx-1 space-y-3 bg-background/95 px-1 pb-3 backdrop-blur">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="min-w-64 flex-1">
+            <SearchBox value={query} onChange={setQuery} placeholder={`Search ${data.providers.length.toLocaleString()} providers`} />
+          </div>
+          <select
+            aria-label="Filter by category"
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
+            className="h-9 rounded-lg border border-input bg-background px-3 text-xs text-foreground outline-none hover:bg-foreground/[0.025]"
+          >
+            <option value="all">All categories</option>
+            {categories.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+          <select
+            aria-label="Sort providers"
+            value={sort}
+            onChange={(event) => setSort(event.target.value as ProviderSort)}
+            className="h-9 rounded-lg border border-input bg-background px-3 text-xs text-foreground outline-none hover:bg-foreground/[0.025]"
+          >
+            <option value="recommended">Recommended</option>
+            <option value="name">Name</option>
+            <option value="actions">Most actions</option>
+          </select>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-1.5">
+            <ProviderFilterChip active={statusFilter === 'all'} onClick={() => setStatusFilter('all')}>All</ProviderFilterChip>
+            <ProviderFilterChip active={statusFilter === 'connected'} onClick={() => setStatusFilter('connected')}>Connected</ProviderFilterChip>
+            <ProviderFilterChip active={statusFilter === 'no-setup'} onClick={() => setStatusFilter('no-setup')}>No setup</ProviderFilterChip>
+            <ProviderFilterChip active={statusFilter === 'needs-setup'} onClick={() => setStatusFilter('needs-setup')}>Needs setup</ProviderFilterChip>
+          </div>
+          <span className="text-xs tabular-nums text-muted-foreground">{providers.length.toLocaleString()} providers</span>
+        </div>
+      </div>
+
+      <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-3">
+        {visibleProviders.map((provider) => {
           const status = resolveOpenConnectorProviderConnectionStatus(provider, data.connections, data.oauthConfigs)
           return (
             <button
               key={provider.service}
               type="button"
               onClick={() => navigate(routes.view.openConnector({ providerService: provider.service }))}
-              className="rounded-2xl border border-border/60 bg-card p-4 text-left shadow-sm transition-colors hover:bg-foreground/[0.03]"
+              className="group rounded-xl border border-border/55 bg-card p-3 text-left transition-all hover:border-border hover:bg-foreground/[0.025] hover:shadow-sm"
             >
               <div className="flex items-start gap-3">
                 <ProviderIcon provider={provider} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <h3 className="truncate text-sm font-semibold">{provider.displayName}</h3>
+                    <h3 className="truncate text-sm font-medium">{provider.displayName}</h3>
                     <ProviderStatusBadge status={status} />
                   </div>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">{provider.service}</p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    <Badge variant="secondary">{provider.actions.length} actions</Badge>
-                    {provider.categories.slice(0, 2).map((category) => <Badge key={category} variant="outline">{category}</Badge>)}
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{provider.service}</p>
+                  <div className="mt-2.5 flex min-h-5 flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] tabular-nums text-muted-foreground">{provider.actions.length} actions</span>
+                    {provider.categories.slice(0, 2).map((item) => (
+                      <span key={item} className="rounded-md bg-foreground/[0.045] px-1.5 py-0.5 text-[10px] text-muted-foreground">{item}</span>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -224,8 +322,28 @@ function ProvidersSection({ data, selectedService, baseUrl }: { data: OpenConnec
           )
         })}
       </div>
-      {providers.length === 0 ? <MutedEmpty text="No providers match your search." /> : null}
+
+      {visibleProviders.length < providers.length ? (
+        <div className="flex justify-center pt-2">
+          <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + PROVIDER_PAGE_SIZE)}>
+            Load {Math.min(PROVIDER_PAGE_SIZE, providers.length - visibleProviders.length)} more
+          </Button>
+        </div>
+      ) : null}
+      {providers.length === 0 ? <MutedEmpty text="No providers match these filters." /> : null}
     </div>
+  )
+}
+
+function ProviderFilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full px-3 py-1.5 text-xs transition-colors ${active ? 'bg-foreground text-background' : 'bg-foreground/[0.045] text-muted-foreground hover:bg-foreground/[0.075] hover:text-foreground'}`}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -298,8 +416,16 @@ function ActionsSection({ data, selectedActionId, baseUrl, gatewaySource }: { da
 }
 
 function ActionList({ actions, compact = false }: { actions: OpenConnectorActionSummary[]; compact?: boolean }) {
+  const pageSize = compact ? 24 : 100
+  const [visibleCount, setVisibleCount] = React.useState(pageSize)
+  const visibleActions = actions.slice(0, visibleCount)
+
+  React.useEffect(() => {
+    setVisibleCount(pageSize)
+  }, [actions, pageSize])
+
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/60 bg-card">
+    <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
       <table className="w-full text-left text-sm">
         <thead className="border-b border-border/60 bg-foreground/[0.02] text-xs text-muted-foreground">
           <tr>
@@ -310,7 +436,7 @@ function ActionList({ actions, compact = false }: { actions: OpenConnectorAction
           </tr>
         </thead>
         <tbody>
-          {actions.map((action) => (
+          {visibleActions.map((action) => (
             <tr key={action.id} className="border-b border-border/40 last:border-0">
               <td className="px-4 py-3">
                 <button type="button" className="text-left hover:underline" onClick={() => navigate(routes.view.openConnector({ actionId: action.id }))}>
@@ -325,6 +451,16 @@ function ActionList({ actions, compact = false }: { actions: OpenConnectorAction
           ))}
         </tbody>
       </table>
+      {visibleActions.length < actions.length ? (
+        <div className="flex items-center justify-between border-t border-border/50 px-4 py-3">
+          <span className="text-xs tabular-nums text-muted-foreground">
+            Showing {visibleActions.length.toLocaleString()} of {actions.length.toLocaleString()}
+          </span>
+          <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + pageSize)}>
+            Load more
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -491,27 +627,82 @@ function SectionCard({ title, action, children }: { title: string; action?: Reac
 
 function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
   return (
-    <label className="relative block max-w-md">
+    <label className="relative block w-full max-w-md">
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <Input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="pl-9" />
     </label>
   )
 }
 
+const providerLogoCache = new Map<string, string | null>()
+const providerLogoRequests = new Map<string, Promise<string | null>>()
+
+function resolveProviderLogo(cacheKey: string, provider: OpenConnectorProviderSummary): Promise<string | null> {
+  const existing = providerLogoRequests.get(cacheKey)
+  if (existing) return existing
+  const request = window.electronAPI.getLogoUrl(provider.homepageUrl!, provider.service)
+    .catch(() => null)
+    .then((resolved) => {
+      providerLogoCache.set(cacheKey, resolved)
+      return resolved
+    })
+    .finally(() => providerLogoRequests.delete(cacheKey))
+  providerLogoRequests.set(cacheKey, request)
+  return request
+}
+
+function useProviderLogo(provider: OpenConnectorProviderSummary): string | null {
+  const cacheKey = provider.iconUrl ?? provider.homepageUrl ?? provider.service
+  const [logoUrl, setLogoUrl] = React.useState<string | null>(() => provider.iconUrl ?? providerLogoCache.get(cacheKey) ?? null)
+
+  React.useEffect(() => {
+    if (provider.iconUrl) {
+      providerLogoCache.set(cacheKey, provider.iconUrl)
+      setLogoUrl(provider.iconUrl)
+      return
+    }
+    if (!provider.homepageUrl) {
+      providerLogoCache.set(cacheKey, null)
+      setLogoUrl(null)
+      return
+    }
+    const cached = providerLogoCache.get(cacheKey)
+    if (cached !== undefined) {
+      setLogoUrl(cached)
+      return
+    }
+
+    let cancelled = false
+    void resolveProviderLogo(cacheKey, provider).then((resolved) => {
+      if (!cancelled) setLogoUrl(resolved)
+    })
+    return () => { cancelled = true }
+  }, [cacheKey, provider.homepageUrl, provider.iconUrl, provider.service])
+
+  return logoUrl
+}
+
 function ProviderIcon({ provider, size = 'md' }: { provider: OpenConnectorProviderSummary; size?: 'md' | 'lg' }) {
+  const resolvedLogo = useProviderLogo(provider)
+  const [imageFailed, setImageFailed] = React.useState(false)
   const className = size === 'lg' ? 'h-14 w-14 rounded-2xl' : 'h-10 w-10 rounded-xl'
+
+  React.useEffect(() => setImageFailed(false), [resolvedLogo])
+
   return (
-    <div className={`${className} flex shrink-0 items-center justify-center overflow-hidden bg-foreground/[0.05] text-sm font-semibold`}>
-      {provider.iconUrl ? <img src={provider.iconUrl} alt="" className="h-full w-full object-cover" /> : provider.displayName.slice(0, 2).toUpperCase()}
+    <div className={`${className} flex shrink-0 items-center justify-center overflow-hidden border border-border/40 bg-foreground/[0.04] text-xs font-semibold text-muted-foreground`}>
+      {resolvedLogo && !imageFailed ? (
+        <img src={resolvedLogo} alt="" className="h-full w-full object-cover" onError={() => setImageFailed(true)} />
+      ) : provider.displayName.slice(0, 2).toUpperCase()}
     </div>
   )
 }
 
 function ProviderStatusBadge({ status }: { status: ReturnType<typeof resolveOpenConnectorProviderConnectionStatus> }) {
-  if (status.noSetupRequired) return <Badge variant="secondary">No setup</Badge>
-  if (status.connected) return <Badge className="bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/10">Connected</Badge>
-  if (status.oauthClientRequired) return <Badge className="bg-amber-500/10 text-amber-600 hover:bg-amber-500/10">OAuth client</Badge>
-  return <Badge variant="outline">Connect</Badge>
+  if (status.connected) return <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] font-medium text-emerald-600"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Connected</span>
+  if (status.noSetupRequired) return <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-foreground/30" />No setup</span>
+  if (status.oauthClientRequired) return <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] text-amber-600"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" />OAuth setup</span>
+  return <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-foreground/20" />Needs setup</span>
 }
 
 function ExecutionBadge({ action }: { action: OpenConnectorActionSummary }) {

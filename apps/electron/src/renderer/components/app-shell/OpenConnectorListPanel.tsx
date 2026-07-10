@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { Activity, BookOpen, KeyRound, LayoutDashboard, ListChecks, Plug, ServerCog } from 'lucide-react'
 import { EntityPanel } from '@/components/ui/entity-panel'
-import { EntityListBadge } from '@/components/ui/entity-list-badge'
 import { EntityListEmptyScreen } from '@/components/ui/entity-list-empty'
 import { sourceSelection } from '@/hooks/useEntitySelection'
 import { useOpenConnectorRuntime } from '@/hooks/useOpenConnectorRuntime'
@@ -41,7 +40,7 @@ export function OpenConnectorListPanel({
     {
       id: 'overview',
       title: 'Overview',
-      description: runtime.healthOk ? 'Runtime is reachable' : 'Runtime status and setup',
+      description: runtime.healthOk ? 'Online' : 'Check runtime status',
       icon: <LayoutDashboard className="h-4 w-4" />,
     },
     {
@@ -78,7 +77,7 @@ export function OpenConnectorListPanel({
       description: 'Console, OpenAPI and MCP metadata',
       icon: <BookOpen className="h-4 w-4" />,
     },
-  ], [runtime.data.runs.length, runtime.healthOk, summary.actionCount, summary.activeTokenCount, summary.connectedCount, summary.failedRunCount, summary.locallyExecutableActionCount, summary.providerCount])
+  ], [runtime.data.runs.length, runtime.error, runtime.healthOk, summary.actionCount, summary.activeTokenCount, summary.connectedCount, summary.failedRunCount, summary.locallyExecutableActionCount, summary.providerCount])
 
   return (
     <EntityPanel<OpenConnectorNavItem>
@@ -109,18 +108,15 @@ export function OpenConnectorListPanel({
       }
       mapItem={(item) => ({
         icon: (
-          <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-foreground/[0.05] text-muted-foreground">
+          <div className="flex h-7 w-7 items-center justify-center rounded-[9px] bg-foreground/[0.045] text-muted-foreground">
             {item.icon}
           </div>
         ),
         title: item.title,
         badges: (
-          <>
-            <EntityListBadge colorClass={runtime.error ? 'bg-destructive/10 text-destructive' : 'bg-accent/10 text-accent'}>
-              {item.id === 'overview' ? (runtime.error ? 'Offline' : 'Runtime') : 'OpenConnector'}
-            </EntityListBadge>
-            <span className="truncate">{item.description}</span>
-          </>
+          <span className={item.id === 'overview' && runtime.error ? 'truncate text-destructive' : 'truncate'}>
+            {item.description}
+          </span>
         ),
         trailing: item.countLabel ? (
           <span className="truncate text-xs text-muted-foreground">{item.countLabel}</span>
