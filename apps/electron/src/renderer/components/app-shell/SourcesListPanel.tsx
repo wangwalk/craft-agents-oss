@@ -11,9 +11,9 @@ import { SourceMenu } from './SourceMenu'
 import { SendResourceToWorkspaceDialog } from './SendResourceToWorkspaceDialog'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { EditPopover, getEditConfig, type EditContextKey } from '@/components/ui/EditPopover'
-import { openConnectorSourceItemsAtom } from '@/atoms/openconnector-sources'
+import { openConnectorProviderItemsAtom } from '@/atoms/openconnector-sources'
 import { useAtomValue } from 'jotai'
-import type { OpenConnectorVirtualSourceItem } from '@/lib/openconnector'
+import type { OpenConnectorProviderItem } from '@/lib/openconnector'
 import type { LoadedSource, SourceFilter } from '../../../shared/types'
 
 const SOURCE_TYPE_CONFIG: Record<string, { labelKey: string; colorClass: string }> = {
@@ -34,11 +34,12 @@ const SOURCE_TYPE_FILTER_LABEL_KEYS: Record<string, string> = {
   api: 'sourcesList.filterApi',
   mcp: 'sourcesList.filterMcp',
   local: 'sourcesList.filterLocalFolder',
+  openconnector: 'sourcesList.filterOpenConnector',
 }
 
 type SourcesListItem =
   | { kind: 'source'; id: string; source: LoadedSource }
-  | { kind: 'openconnector'; id: string; provider: OpenConnectorVirtualSourceItem }
+  | { kind: 'openconnector'; id: string; provider: OpenConnectorProviderItem }
 
 export interface SourcesListPanelProps {
   sources: LoadedSource[]
@@ -65,7 +66,7 @@ export function SourcesListPanel({
 }: SourcesListPanelProps) {
   const { t } = useTranslation()
   const { workspaces, activeWorkspaceId } = useAppShellContext()
-  const openConnectorItems = useAtomValue(openConnectorSourceItemsAtom)
+  const openConnectorItems = useAtomValue(openConnectorProviderItemsAtom)
   const hasOtherWorkspaces = workspaces.length > 1
   const { clearMultiSelect } = sourceSelection.useSelection()
 
@@ -103,9 +104,7 @@ export function SourcesListPanel({
   const emptyMessage = React.useMemo(() => {
     if (sourceFilter?.kind === 'type') {
       const filterLabelKey = SOURCE_TYPE_FILTER_LABEL_KEYS[sourceFilter.sourceType]
-      const filterLabel = sourceFilter.sourceType === 'openconnector'
-        ? 'OpenConnector'
-        : (filterLabelKey ? t(filterLabelKey) : sourceFilter.sourceType)
+      const filterLabel = filterLabelKey ? t(filterLabelKey) : sourceFilter.sourceType
       return t('sourcesList.noSourcesOfType', { type: filterLabel })
     }
     return t('sourcesList.noSourcesConfigured')
@@ -170,7 +169,7 @@ export function SourcesListPanel({
             title: provider.providerApp.name,
             badges: (
               <>
-                <EntityListBadge colorClass="bg-accent/10 text-accent">OpenConnector</EntityListBadge>
+                <EntityListBadge colorClass="bg-accent/10 text-accent">{t('sourcesList.typeOpenConnectorApp')}</EntityListBadge>
                 {statusConfig && (
                   <EntityListBadge colorClass={statusConfig.colorClass} tooltip={provider.source.config.connectionError || undefined} className="cursor-default">
                     {t(statusConfig.labelKey)}

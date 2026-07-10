@@ -30,13 +30,13 @@ import type { LoadedSource, McpToolWithPermission } from '../../shared/types'
 import type { PermissionsConfigFile } from '@craft-agent/shared/agent/modes'
 import {
   OPENCONNECTOR_PROVIDER_APPS,
-  isOpenConnectorSource,
+  isOpenConnectorGatewaySource,
   type OpenConnectorProviderApp,
-} from '@craft-agent/shared/sources/source-templates'
+} from '@craft-agent/shared/connectors/openconnector'
 import {
   getOpenConnectorActionCountForProvider,
   getOpenConnectorToolsForProvider,
-  parseOpenConnectorVirtualSourceId,
+  parseOpenConnectorProviderItemId,
 } from '@/lib/openconnector'
 
 interface SourceInfoPageProps {
@@ -197,7 +197,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
   const { navigateToSource } = useNavigation()
   const { workspaces } = useAppShellContext()
   const remoteWorkspaceId = workspaces.find((workspace) => workspace.id === workspaceId)?.remoteServer?.remoteWorkspaceId ?? null
-  const openConnectorSelection = useMemo(() => parseOpenConnectorVirtualSourceId(sourceSlug), [sourceSlug])
+  const openConnectorSelection = useMemo(() => parseOpenConnectorProviderItemId(sourceSlug), [sourceSlug])
   const baseSourceSlug = openConnectorSelection?.sourceSlug ?? sourceSlug
   const [source, setSource] = useState<LoadedSource | null>(null)
   const [loading, setLoading] = useState(true)
@@ -337,7 +337,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
   }, [permissionsConfig, source])
 
   const openConnectorApps = useMemo(() => {
-    if (!source || !isOpenConnectorSource(source.config)) return []
+    if (!source || !isOpenConnectorGatewaySource(source.config)) return []
     return OPENCONNECTOR_PROVIDER_APPS
   }, [source])
 
@@ -479,7 +479,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
                 </div>
               )}
             >
-              <Info_Table.Row label={t('common.type')} value={selectedOpenConnectorApp ? 'OPENCONNECTOR' : source.config.type.toUpperCase()} />
+              <Info_Table.Row label={t('common.type')} value={selectedOpenConnectorApp ? t('sourceInfo.openConnectorProviderAppType') : source.config.type.toUpperCase()} />
               {selectedOpenConnectorApp && (
                 <Info_Table.Row label={t('sourceInfo.openConnectorGatewaySource')} value={source.config.name} />
               )}
@@ -544,7 +544,7 @@ export default function SourceInfoPage({ sourceSlug, workspaceId, onDelete }: So
           )}
 
           {/* OpenConnector provider apps */}
-          {isOpenConnectorSource(source.config) && !selectedOpenConnectorApp && (
+          {isOpenConnectorGatewaySource(source.config) && !selectedOpenConnectorApp && (
             <Info_Section
               title={t('sourceInfo.openConnectorApps')}
               description={t('sourceInfo.openConnectorAppsDesc')}

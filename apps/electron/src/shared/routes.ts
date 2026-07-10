@@ -16,6 +16,7 @@
  */
 
 import type { SettingsSubpage } from './settings-registry'
+import type { SourceCollectionFilterType } from './types'
 import type { PermissionMode } from '@craft-agent/shared/agent/mode-types'
 
 // Helper to build query strings from params
@@ -123,15 +124,15 @@ export const routes = {
         ? `view/${encodeURIComponent(viewId)}/session/${sessionId}` as const
         : `view/${encodeURIComponent(viewId)}` as const,
 
-    /** Sources view (sources navigator) - supports type filtering */
-    sources: (params?: { sourceSlug?: string; type?: 'api' | 'mcp' | 'local' | 'openconnector' }) => {
+    /** Sources view (sources navigator) - supports source filters plus connector gateway collections */
+    sources: (params?: { sourceSlug?: string; type?: SourceCollectionFilterType }) => {
       const { sourceSlug, type } = params ?? {}
       // Build base from filter type
       const base = type ? `sources/${type}` : 'sources'
       if (sourceSlug) {
         return `${base}/source/${sourceSlug}` as const
       }
-      return base as 'sources' | `sources/${'api' | 'mcp' | 'local' | 'openconnector'}`
+      return base as 'sources' | `sources/${SourceCollectionFilterType}`
     },
 
     /** API sources view (sources navigator, api filter) */
@@ -152,7 +153,13 @@ export const routes = {
         ? `sources/local/source/${sourceSlug}` as const
         : 'sources/local' as const,
 
-    /** OpenConnector sources view (sources navigator, provider filter) */
+    /** OpenConnector top-level product view. Pass a provider item ID for provider detail. */
+    openConnector: (providerItemId?: string) =>
+      providerItemId
+        ? `openconnector/provider/${providerItemId}` as const
+        : 'openconnector' as const,
+
+    /** Legacy OpenConnector sources route. Prefer openConnector(). */
     sourcesOpenConnector: (sourceSlug?: string) =>
       sourceSlug
         ? `sources/openconnector/source/${sourceSlug}` as const

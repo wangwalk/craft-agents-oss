@@ -35,7 +35,7 @@ export interface ParsedRoute {
 // Compound Route Types (new format)
 // =============================================================================
 
-export type NavigatorType = 'sessions' | 'sources' | 'skills' | 'automations' | 'projects' | 'settings'
+export type NavigatorType = 'sessions' | 'sources' | 'openconnector' | 'skills' | 'automations' | 'projects' | 'settings'
 
 export interface ParsedCompoundRoute {
   /** The navigator type */
@@ -63,7 +63,7 @@ export interface ParsedCompoundRoute {
  * Known prefixes that indicate a compound route
  */
 const COMPOUND_ROUTE_PREFIXES = [
-  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'board', 'sources', 'skills', 'automations', 'projects', 'settings'
+  'allSessions', 'flagged', 'archived', 'state', 'label', 'view', 'board', 'sources', 'openconnector', 'skills', 'automations', 'projects', 'settings'
 ]
 
 /**
@@ -85,7 +85,9 @@ export function isCompoundRoute(route: string): boolean {
  *   'sources/api' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'api' }, details: null }
  *   'sources/mcp' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'mcp' }, details: null }
  *   'sources/local' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'local' }, details: null }
- *   'sources/openconnector' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'openconnector' }, details: null }
+ *   'openconnector' -> { navigator: 'openconnector', details: null }
+ *   'openconnector/provider/openconnector::openconnector::umami' -> { navigator: 'openconnector', details: { type: 'provider', id: 'openconnector::openconnector::umami' } }
+ *   'sources/openconnector' -> { navigator: 'openconnector', details: null }  // legacy compatibility
  *   'sources/source/github' -> { navigator: 'sources', details: { type: 'source', id: 'github' } }
  *   'sources/api/source/gmail' -> { navigator: 'sources', sourceFilter: { kind: 'type', sourceType: 'api' }, details: { type: 'source', id: 'gmail' } }
  *   'settings' -> { navigator: 'settings', details: null }  // navigator-only view
@@ -126,16 +128,43 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
     }
   }
 
-  // Sources navigator - supports type filters (api, mcp, local, openconnector)
+  // OpenConnector top-level product navigator
+  if (first === 'openconnector') {
+    if (segments.length === 1) {
+      return { navigator: 'openconnector', details: null }
+    }
+
+    if (segments[1] === 'provider' && segments[2]) {
+      return {
+        navigator: 'openconnector',
+        details: { type: 'provider', id: segments[2] },
+      }
+    }
+
+    return null
+  }
+
+  // Sources navigator - supports source type filters. The legacy sources/openconnector
+  // route is accepted but maps to the top-level OpenConnector navigator.
   if (first === 'sources') {
     if (segments.length === 1) {
       return { navigator: 'sources', details: null }
     }
 
-    // Check for type filter: sources/api, sources/mcp, sources/local, sources/openconnector
-    const validSourceTypes = ['api', 'mcp', 'local', 'openconnector']
+    if (segments[1] === 'openconnector') {
+      if (segments[2] === 'source' && segments[3]) {
+        return {
+          navigator: 'openconnector',
+          details: { type: 'provider', id: segments[3] },
+        }
+      }
+      return { navigator: 'openconnector', details: null }
+    }
+
+    // Check for source type filter: sources/api, sources/mcp, sources/local
+    const validSourceTypes = ['api', 'mcp', 'local']
     if (validSourceTypes.includes(segments[1])) {
-      const sourceType = segments[1] as 'api' | 'mcp' | 'local' | 'openconnector'
+      const sourceType = segments[1] as SourceFilter['sourceType']
       const sourceFilter: SourceFilter = { kind: 'type', sourceType }
 
       // Check for source selection within filtered view: sources/api/source/{sourceSlug}
@@ -297,13 +326,18 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
   }
 
   if (parsed.navigator === 'sources') {
-    // Build base from filter (sources, sources/api, sources/mcp, sources/local, sources/openconnector)
+    // Build base from filter (sources, sources/api, sources/mcp, sources/local)
     let base = 'sources'
     if (parsed.sourceFilter?.kind === 'type') {
       base = `sources/${parsed.sourceFilter.sourceType}`
     }
     if (!parsed.details) return base
     return `${base}/source/${parsed.details.id}`
+  }
+
+  if (parsed.navigator === 'openconnector') {
+    if (!parsed.details) return 'openconnector'
+    return `openconnector/provider/${parsed.details.id}`
   }
 
   if (parsed.navigator === 'skills') {
@@ -434,6 +468,14 @@ function convertCompoundToViewRoute(compound: ParsedCompoundRoute): ParsedRoute 
       return { type: 'view', name: 'sources', params: {} }
     }
     return { type: 'view', name: 'source-info', id: compound.details.id, params: {} }
+  }
+
+  // OpenConnector
+  if (compound.navigator === 'openconnector') {
+    if (!compound.details) {
+      return { type: 'view', name: 'openconnector', params: {} }
+    }
+    return { type: 'view', name: 'openconnector-provider', id: compound.details.id, params: {} }
   }
 
   // Skills
@@ -568,6 +610,17 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
     }
   }
 
+  // OpenConnector
+  if (compound.navigator === 'openconnector') {
+    if (!compound.details) {
+      return { navigator: 'openconnector', details: null }
+    }
+    return {
+      navigator: 'openconnector',
+      details: { type: 'provider', providerItemId: compound.details.id },
+    }
+  }
+
   // Skills
   if (compound.navigator === 'skills') {
     if (!compound.details) {
@@ -647,6 +700,19 @@ function convertParsedRouteToNavigationState(parsed: ParsedRoute): NavigationSta
       return { navigator: 'settings', subpage: 'preferences' }
     case 'sources':
       return { navigator: 'sources', details: null }
+    case 'openconnector':
+      return { navigator: 'openconnector', details: null }
+    case 'openconnector-provider':
+      if (parsed.id) {
+        return {
+          navigator: 'openconnector',
+          details: {
+            type: 'provider',
+            providerItemId: parsed.id,
+          },
+        }
+      }
+      return { navigator: 'openconnector', details: null }
     case 'source-info':
       if (parsed.id) {
         return {
@@ -784,6 +850,13 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
       navigator: 'sources',
       sourceFilter: state.filter ?? undefined,
       details: state.details ? { type: 'source', id: state.details.sourceSlug } : null,
+    }
+  }
+
+  if (state.navigator === 'openconnector') {
+    return {
+      navigator: 'openconnector',
+      details: state.details?.type === 'provider' ? { type: 'provider', id: state.details.providerItemId } : null,
     }
   }
 

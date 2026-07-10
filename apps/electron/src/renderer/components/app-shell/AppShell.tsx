@@ -89,10 +89,10 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, AutomationFilter } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, SourceCollectionFilterType, AutomationFilter } from "../../../shared/types"
 import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
-import { openConnectorSourceItemsAtom } from "@/atoms/openconnector-sources"
+import { openConnectorProviderItemsAtom } from "@/atoms/openconnector-sources"
 import { skillsAtom } from "@/atoms/skills"
 import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute } from "@/atoms/panel-stack"
 import { type SessionStatusId, type SessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
@@ -113,6 +113,7 @@ import {
   useNavigationState,
   isSessionsNavigation,
   isSourcesNavigation,
+  isOpenConnectorNavigation,
   isSettingsNavigation,
   isSkillsNavigation,
   isAutomationsNavigation,
@@ -120,9 +121,10 @@ import {
   type NavigationState,
 } from "@/contexts/NavigationContext"
 import type { SettingsSubpage } from "../../../shared/types"
+import { OpenConnectorListPanel } from "./OpenConnectorListPanel"
 import { SourcesListPanel } from "./SourcesListPanel"
 import { SourceTemplateDialog } from "./SourceTemplateDialog"
-import { buildOpenConnectorVirtualSourceItems, type OpenConnectorVirtualSourceItem } from "@/lib/openconnector"
+import { buildOpenConnectorProviderItems, type OpenConnectorProviderItem } from "@/lib/openconnector"
 import { SkillsListPanel } from "./SkillsListPanel"
 import { AutomationsListPanel } from "../automations/AutomationsListPanel"
 import { ProjectsListPanel } from "./ProjectsListPanel"
@@ -150,7 +152,7 @@ import {
 import { hasOpenOverlay } from "@/lib/overlay-detection"
 import { clearSourceIconCaches } from "@/lib/icon-cache"
 import { dispatchFocusInputEvent } from "./input/focus-input-events"
-import { isOpenConnectorSource } from "@craft-agent/shared/sources/source-templates"
+import { isOpenConnectorGatewaySource } from "@craft-agent/shared/connectors/openconnector"
 
 /**
  * AppShellProps - Minimal props interface for AppShell component
@@ -908,16 +910,16 @@ function AppShellContent({
   }, [])
   // Sources state (workspace-scoped)
   const [sources, setSources] = React.useState<LoadedSource[]>([])
-  const [openConnectorNavItems, setOpenConnectorNavItems] = React.useState<OpenConnectorVirtualSourceItem[]>([])
-  // Sync sources to atom for NavigationContext auto-selection
+  const [openConnectorNavItems, setOpenConnectorNavItems] = React.useState<OpenConnectorProviderItem[]>([])
+  // Sync sources/provider apps to atoms for NavigationContext auto-selection
   const setSourcesAtom = useSetAtom(sourcesAtom)
-  const setOpenConnectorSourceItems = useSetAtom(openConnectorSourceItemsAtom)
+  const setOpenConnectorProviderItems = useSetAtom(openConnectorProviderItemsAtom)
   React.useEffect(() => {
     setSourcesAtom(sources)
   }, [sources, setSourcesAtom])
   React.useEffect(() => {
-    setOpenConnectorSourceItems(openConnectorNavItems)
-  }, [openConnectorNavItems, setOpenConnectorSourceItems])
+    setOpenConnectorProviderItems(openConnectorNavItems)
+  }, [openConnectorNavItems, setOpenConnectorProviderItems])
 
   // Skills state (workspace-scoped)
   const [skills, setSkills] = React.useState<LoadedSkill[]>([])
@@ -1044,7 +1046,7 @@ function AppShellContent({
       return
     }
 
-    const openConnectorSources = sources.filter((source) => isOpenConnectorSource(source.config))
+    const openConnectorSources = sources.filter((source) => isOpenConnectorGatewaySource(source.config))
     if (openConnectorSources.length === 0) {
       setOpenConnectorNavItems([])
       return
@@ -1056,9 +1058,9 @@ function AppShellContent({
       openConnectorSources.map(async (source) => {
         try {
           const result = await window.electronAPI.getMcpTools(activeWorkspaceId, source.config.slug)
-          return buildOpenConnectorVirtualSourceItems(source, result.tools ?? [])
+          return buildOpenConnectorProviderItems(source, result.tools ?? [])
         } catch {
-          return buildOpenConnectorVirtualSourceItems(source, [])
+          return buildOpenConnectorProviderItems(source, [])
         }
       })
     ).then((itemsBySource) => {
@@ -1172,6 +1174,11 @@ function AppShellContent({
     if (!activeWorkspaceId) return
     navigateToSource(sourceId)
   }, [activeWorkspaceId, navigateToSource])
+
+  const handleOpenConnectorProviderSelect = React.useCallback((providerItemId: string) => {
+    if (!activeWorkspaceId) return
+    navigate(routes.view.openConnector(providerItemId))
+  }, [activeWorkspaceId, navigate])
 
   // Handle selecting a skill from the list
   const handleSkillSelect = React.useCallback((skill: LoadedSkill) => {
@@ -1523,7 +1530,7 @@ function AppShellContent({
 
   // Count sources by type for the Sources dropdown subcategories
   const sourceTypeCounts = useMemo(() => {
-    const counts = { api: 0, mcp: 0, local: 0, openconnector: openConnectorNavItems.length }
+    const counts = { api: 0, mcp: 0, local: 0 }
     for (const source of sources) {
       const t = source.config.type
       if (t === 'api' || t === 'mcp' || t === 'local') {
@@ -1531,7 +1538,7 @@ function AppShellContent({
       }
     }
     return counts
-  }, [openConnectorNavItems.length, sources])
+  }, [sources])
 
   // Count automations by type for the Automations dropdown subcategories
   const automationTypeCounts = useMemo(() => {
@@ -1806,8 +1813,8 @@ function AppShellContent({
     navigate(routes.view.sourcesLocal())
   }, [])
 
-  const handleSourcesOpenConnectorClick = useCallback(() => {
-    navigate(routes.view.sourcesOpenConnector())
+  const handleOpenConnectorClick = useCallback(() => {
+    navigate(routes.view.openConnector())
   }, [])
 
   // Handler for skills view
@@ -1954,7 +1961,7 @@ function AppShellContent({
 
   // Handler for "Add Source" actions. Opens the template picker first; the picker
   // still offers an advanced/custom path that falls back to the agent-driven EditPopover.
-  const openAddSource = useCallback((sourceType?: 'api' | 'mcp' | 'local' | 'openconnector') => {
+  const openAddSource = useCallback((sourceType?: SourceCollectionFilterType) => {
     captureContextMenuPosition()
     if (sourceType === 'openconnector') {
       sourceTemplateFallbackRef.current = 'add-source-mcp'
@@ -2126,14 +2133,14 @@ function AppShellContent({
     result.push({ id: 'nav:sources:api', type: 'nav', action: handleSourcesApiClick })
     result.push({ id: 'nav:sources:mcp', type: 'nav', action: handleSourcesMcpClick })
     result.push({ id: 'nav:sources:local', type: 'nav', action: handleSourcesLocalClick })
-    result.push({ id: 'nav:sources:openconnector', type: 'nav', action: handleSourcesOpenConnectorClick })
+    result.push({ id: 'nav:openconnector', type: 'nav', action: handleOpenConnectorClick })
     result.push({ id: 'nav:skills', type: 'nav', action: handleSkillsClick })
     result.push({ id: 'nav:automations', type: 'nav', action: handleAutomationsClick })
     result.push({ id: 'nav:settings', type: 'nav', action: () => handleSettingsClick() })
     result.push({ id: 'nav:whats-new', type: 'nav', action: handleWhatsNewClick })
 
     return result
-  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSourcesApiClick, handleSourcesMcpClick, handleSourcesLocalClick, handleSourcesOpenConnectorClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
+  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSourcesApiClick, handleSourcesMcpClick, handleSourcesLocalClick, handleOpenConnectorClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -2245,6 +2252,11 @@ function AppShellContent({
     // Sources navigator
     if (isSourcesNavigation(navState)) {
       return t("sidebar.sources")
+    }
+
+    // OpenConnector navigator
+    if (isOpenConnectorNavigation(navState)) {
+      return t("sidebar.openConnector")
     }
 
     // Skills navigator
@@ -2560,19 +2572,19 @@ function AppShellContent({
                             sourceType: 'local',
                           },
                         },
-                        {
-                          id: "nav:sources:openconnector",
-                          title: t("sidebar.openConnector"),
-                          label: String(sourceTypeCounts.openconnector),
-                          icon: Plug,
-                          variant: (sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'openconnector') ? "default" : "ghost",
-                          onClick: handleSourcesOpenConnectorClick,
-                          contextMenu: {
-                            type: 'sources' as const,
-                            onAddSource: () => openAddSource('openconnector'),
-                          },
-                        },
                       ],
+                    },
+                    {
+                      id: "nav:openconnector",
+                      title: t("sidebar.openConnector"),
+                      label: String(openConnectorNavItems.length),
+                      icon: Plug,
+                      variant: isOpenConnectorNavigation(navState) ? "default" : "ghost",
+                      onClick: handleOpenConnectorClick,
+                      contextMenu: {
+                        type: 'sources' as const,
+                        onAddSource: () => openAddSource('openconnector'),
+                      },
                     },
                     {
                       id: "nav:skills",
@@ -3236,6 +3248,15 @@ function AppShellContent({
                 localMcpEnabled={localMcpEnabled}
               />
             )}
+            {isOpenConnectorNavigation(navState) && (
+              <OpenConnectorListPanel
+                providerItems={openConnectorNavItems}
+                selectedProviderItemId={navState.details?.type === 'provider' ? navState.details.providerItemId : null}
+                onProviderClick={handleOpenConnectorProviderSelect}
+                onAddGateway={() => openAddSource('openconnector')}
+                localMcpEnabled={localMcpEnabled}
+              />
+            )}
             {isSkillsNavigation(navState) && activeWorkspaceId && (
               /* Skills List */
               <SkillsListPanel
@@ -3449,7 +3470,7 @@ function AppShellContent({
                   guide: { raw: '' },
                 },
               ])
-              navigate(routes.view.sourcesOpenConnector())
+              navigate(routes.view.openConnector())
             }}
             onCustomSource={() => setTimeout(() => setEditPopoverOpen(sourceTemplateFallbackRef.current), 50)}
           />

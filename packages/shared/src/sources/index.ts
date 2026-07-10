@@ -106,6 +106,7 @@ export {
   getSourceTemplates,
   getSourceTemplate,
   buildSourceConfigFromTemplate,
+  isOpenConnectorGatewaySource,
   isOpenConnectorSource,
   normalizeOpenConnectorMcpUrl,
   inferOpenConnectorProviderIdsFromToolNames,

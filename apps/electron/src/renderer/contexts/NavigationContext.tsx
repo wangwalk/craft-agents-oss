@@ -67,6 +67,7 @@ import type {
 import {
   isSessionsNavigation,
   isSourcesNavigation,
+  isOpenConnectorNavigation,
   isSettingsNavigation,
   isSkillsNavigation,
   isAutomationsNavigation,
@@ -75,7 +76,7 @@ import {
 } from '../../shared/types'
 import { sessionMetaMapAtom, updateSessionMetaAtom, type SessionMeta } from '@/atoms/sessions'
 import { sourcesAtom } from '@/atoms/sources'
-import { openConnectorSourceItemsAtom } from '@/atoms/openconnector-sources'
+import { openConnectorProviderItemsAtom } from '@/atoms/openconnector-sources'
 import { skillsAtom } from '@/atoms/skills'
 import {
   panelStackAtom,
@@ -94,7 +95,7 @@ export type { Route }
 
 // Re-export navigation state types for consumers
 export type { NavigationState, SessionFilter }
-export { isSessionsNavigation, isSourcesNavigation, isSettingsNavigation, isSkillsNavigation, isAutomationsNavigation, isProjectsNavigation }
+export { isSessionsNavigation, isSourcesNavigation, isOpenConnectorNavigation, isSettingsNavigation, isSkillsNavigation, isAutomationsNavigation, isProjectsNavigation }
 
 // =============================================================================
 // Context
@@ -181,7 +182,7 @@ export function NavigationProvider({
 
   // Read sources from atom (populated by AppShell)
   const sources = useAtomValue(sourcesAtom)
-  const openConnectorSourceItems = useAtomValue(openConnectorSourceItemsAtom)
+  const openConnectorProviderItems = useAtomValue(openConnectorProviderItemsAtom)
 
   // Read skills from atom (populated by AppShell)
   const skills = useAtomValue(skillsAtom)
@@ -599,12 +600,17 @@ export function NavigationProvider({
         return sources[0]?.config.slug ?? null
       }
       if (filter.sourceType === 'openconnector') {
-        return openConnectorSourceItems[0]?.id ?? null
+        return openConnectorProviderItems[0]?.id ?? null
       }
       const filtered = sources.filter(s => s.config.type === filter.sourceType)
       return filtered[0]?.config.slug ?? null
     },
-    [sources, openConnectorSourceItems]
+    [sources, openConnectorProviderItems]
+  )
+
+  const getFirstOpenConnectorProviderItemId = useCallback(
+    (): string | null => openConnectorProviderItems[0]?.id ?? null,
+    [openConnectorProviderItems]
   )
 
   const getFirstSkillSlug = useCallback(
@@ -665,6 +671,15 @@ export function NavigationProvider({
         return nextState
       }
 
+      // OpenConnector: auto-select first gateway-backed provider app
+      if (isOpenConnectorNavigation(nextState) && !nextState.details && !options?.skipAutoSelect) {
+        const firstProviderItemId = getFirstOpenConnectorProviderItemId()
+        if (firstProviderItemId) {
+          return { ...nextState, details: { type: 'provider', providerItemId: firstProviderItemId } }
+        }
+        return nextState
+      }
+
       // Skills: auto-select first skill
       if (isSkillsNavigation(nextState) && !nextState.details && !options?.skipAutoSelect) {
         const firstSkillSlug = getFirstSkillSlug()
@@ -676,7 +691,7 @@ export function NavigationProvider({
 
       return nextState
     },
-    [store, workspaceId, remoteWorkspaceId, getLastSelectedSessionId, getFirstSessionId, getFirstSourceSlug, getFirstSkillSlug]
+    [store, workspaceId, remoteWorkspaceId, getLastSelectedSessionId, getFirstSessionId, getFirstSourceSlug, getFirstOpenConnectorProviderItemId, getFirstSkillSlug]
   )
 
   // Ref keeps resolveAutoSelection fresh for reconcileFromUrlParams (defined earlier in the file)
@@ -1203,7 +1218,7 @@ export function NavigationProvider({
           navigate(routes.view.sourcesLocal(sourceSlug))
           return
         case 'openconnector':
-          navigate(routes.view.sourcesOpenConnector(sourceSlug))
+          navigate(routes.view.openConnector(sourceSlug))
           return
       }
     }

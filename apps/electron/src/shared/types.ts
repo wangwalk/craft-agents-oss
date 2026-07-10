@@ -56,8 +56,8 @@ import type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIss
 export type { CredentialHealthStatus, CredentialHealthIssue, CredentialHealthIssueType };
 
 // Source types for session source selection
-import type { LoadedSource, FolderSourceConfig, SourceConnectionStatus } from '@craft-agent/shared/sources/types';
-export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus };
+import type { LoadedSource, FolderSourceConfig, SourceConnectionStatus, SourceType } from '@craft-agent/shared/sources/types';
+export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus, SourceType };
 
 // Skill types
 import type { LoadedSkill, SkillMetadata } from '@craft-agent/shared/skills/types';
@@ -836,11 +836,17 @@ export interface SessionsNavigationState {
 }
 
 /**
- * Source type filter for sources navigation
+ * Collection filter for the Sources navigator.
+ *
+ * `openconnector` is intentionally not a persisted Source config type. It is a
+ * UI collection of OpenConnector gateway-backed provider apps, backed by one
+ * physical MCP source.
  */
+export type SourceCollectionFilterType = SourceType | 'openconnector'
+
 export interface SourceFilter {
   kind: 'type'
-  sourceType: 'api' | 'mcp' | 'local' | 'openconnector'
+  sourceType: SourceCollectionFilterType
 }
 
 /**
@@ -858,6 +864,19 @@ export interface SourcesNavigationState {
   navigator: 'sources'
   filter?: SourceFilter
   details: { type: 'source'; sourceSlug: string } | null
+  rightSidebar?: RightSidebarPanel
+}
+
+/**
+ * OpenConnector top-level product navigation.
+ *
+ * Provider apps are gateway-backed UI items, not persisted Source configs. The
+ * providerItemId currently remains `sourceSlug::openconnector::providerId` for
+ * compatibility with existing source detail rendering.
+ */
+export interface OpenConnectorNavigationState {
+  navigator: 'openconnector'
+  details: { type: 'provider'; providerItemId: string } | null
   rightSidebar?: RightSidebarPanel
 }
 
@@ -908,6 +927,7 @@ export interface ProjectsNavigationState {
 export type NavigationState =
   | SessionsNavigationState
   | SourcesNavigationState
+  | OpenConnectorNavigationState
   | SettingsNavigationState
   | SkillsNavigationState
   | AutomationsNavigationState
@@ -920,6 +940,10 @@ export const isSessionsNavigation = (
 export const isSourcesNavigation = (
   state: NavigationState
 ): state is SourcesNavigationState => state.navigator === 'sources'
+
+export const isOpenConnectorNavigation = (
+  state: NavigationState
+): state is OpenConnectorNavigationState => state.navigator === 'openconnector'
 
 export const isSettingsNavigation = (
   state: NavigationState
@@ -952,6 +976,12 @@ export const getNavigationStateKey = (state: NavigationState): string => {
       return `sources/${state.filter.sourceType}`
     }
     return 'sources'
+  }
+  if (state.navigator === 'openconnector') {
+    if (state.details?.type === 'provider') {
+      return `openconnector/provider/${state.details.providerItemId}`
+    }
+    return 'openconnector'
   }
   if (state.navigator === 'skills') {
     if (state.details?.type === 'skill') {
@@ -994,7 +1024,22 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
   if (key === 'sources/api') return { navigator: 'sources', filter: { kind: 'type', sourceType: 'api' }, details: null }
   if (key === 'sources/mcp') return { navigator: 'sources', filter: { kind: 'type', sourceType: 'mcp' }, details: null }
   if (key === 'sources/local') return { navigator: 'sources', filter: { kind: 'type', sourceType: 'local' }, details: null }
-  if (key === 'sources/openconnector') return { navigator: 'sources', filter: { kind: 'type', sourceType: 'openconnector' }, details: null }
+  if (key === 'sources/openconnector') return { navigator: 'openconnector', details: null }
+  if (key.startsWith('sources/openconnector/source/')) {
+    const providerItemId = key.slice('sources/openconnector/source/'.length)
+    if (providerItemId) {
+      return { navigator: 'openconnector', details: { type: 'provider', providerItemId } }
+    }
+    return { navigator: 'openconnector', details: null }
+  }
+  if (key === 'openconnector') return { navigator: 'openconnector', details: null }
+  if (key.startsWith('openconnector/provider/')) {
+    const providerItemId = key.slice('openconnector/provider/'.length)
+    if (providerItemId) {
+      return { navigator: 'openconnector', details: { type: 'provider', providerItemId } }
+    }
+    return { navigator: 'openconnector', details: null }
+  }
   if (key.startsWith('sources/source/')) {
     const sourceSlug = key.slice(15)
     if (sourceSlug) {

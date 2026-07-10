@@ -28,6 +28,7 @@ import {
   useNavigationState,
   isSessionsNavigation,
   isSourcesNavigation,
+  isOpenConnectorNavigation,
   isSettingsNavigation,
   isSkillsNavigation,
   isAutomationsNavigation,
@@ -276,6 +277,27 @@ export function MainContentPanel({
       <Panel variant="grow" className={className}>
         <div className="flex items-center justify-center h-full text-muted-foreground">
           <p className="text-sm">{t("sourcesList.noSourcesConfigured")}</p>
+        </div>
+      </Panel>
+    )
+  }
+
+  // OpenConnector navigator - show provider app info or gateway empty state
+  if (isOpenConnectorNavigation(navState)) {
+    if (navState.details?.type === 'provider') {
+      return wrapWithStoplight(
+        <Panel variant="grow" className={className}>
+          <SourceInfoPage
+            sourceSlug={navState.details.providerItemId}
+            workspaceId={activeWorkspaceId || ''}
+          />
+        </Panel>
+      )
+    }
+    return wrapWithStoplight(
+      <Panel variant="grow" className={className}>
+        <div className="flex items-center justify-center h-full text-muted-foreground">
+          <p className="text-sm">{t("openConnector.noProviderSelected")}</p>
         </div>
       </Panel>
     )

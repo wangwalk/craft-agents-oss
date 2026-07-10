@@ -18,7 +18,7 @@ import type { NavigationState } from '../../shared/types'
  * Per-navigator semantics:
  * - sessions: a session is selected
  * - settings: a subpage is selected (bare `settings` route → false)
- * - sources / skills / automations: a detail item is selected
+ * - sources / openconnector / skills / automations: a detail item is selected
  */
 export function isDetailNavState(navState: NavigationState | null): boolean {
   if (!navState) return false
@@ -28,6 +28,7 @@ export function isDetailNavState(navState: NavigationState | null): boolean {
     case 'settings':
       return navState.subpage !== null
     case 'sources':
+    case 'openconnector':
     case 'skills':
     case 'automations':
     case 'projects':

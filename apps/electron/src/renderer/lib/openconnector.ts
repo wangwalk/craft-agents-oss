@@ -2,13 +2,13 @@ import type { LoadedSource, McpToolWithPermission } from '../../shared/types'
 import {
   OPENCONNECTOR_PROVIDER_APPS,
   inferOpenConnectorProviderIdsFromToolNames,
-  isOpenConnectorSource,
+  isOpenConnectorGatewaySource,
   type OpenConnectorProviderApp,
-} from '@craft-agent/shared/sources/source-templates'
+} from '@craft-agent/shared/connectors/openconnector'
 
-const OPENCONNECTOR_VIRTUAL_SOURCE_SEPARATOR = '::openconnector::'
+const OPENCONNECTOR_PROVIDER_ITEM_SEPARATOR = '::openconnector::'
 
-export interface OpenConnectorVirtualSourceItem {
+export interface OpenConnectorProviderItem {
   id: string
   providerId: string
   sourceSlug: string
@@ -18,22 +18,32 @@ export interface OpenConnectorVirtualSourceItem {
   actionCount: number
 }
 
-export function buildOpenConnectorVirtualSourceId(sourceSlug: string, providerId: string): string {
-  return `${sourceSlug}${OPENCONNECTOR_VIRTUAL_SOURCE_SEPARATOR}${providerId}`
+/**
+ * Backward-compatible alias for older renderer code that still calls these
+ * gateway-backed provider apps "virtual sources".
+ */
+export type OpenConnectorVirtualSourceItem = OpenConnectorProviderItem
+
+export function buildOpenConnectorProviderItemId(sourceSlug: string, providerId: string): string {
+  return `${sourceSlug}${OPENCONNECTOR_PROVIDER_ITEM_SEPARATOR}${providerId}`
 }
 
-export function parseOpenConnectorVirtualSourceId(
+export const buildOpenConnectorVirtualSourceId = buildOpenConnectorProviderItemId
+
+export function parseOpenConnectorProviderItemId(
   value: string
 ): { sourceSlug: string; providerId: string } | null {
-  const separatorIndex = value.indexOf(OPENCONNECTOR_VIRTUAL_SOURCE_SEPARATOR)
+  const separatorIndex = value.indexOf(OPENCONNECTOR_PROVIDER_ITEM_SEPARATOR)
   if (separatorIndex === -1) return null
 
   const sourceSlug = value.slice(0, separatorIndex)
-  const providerId = value.slice(separatorIndex + OPENCONNECTOR_VIRTUAL_SOURCE_SEPARATOR.length)
+  const providerId = value.slice(separatorIndex + OPENCONNECTOR_PROVIDER_ITEM_SEPARATOR.length)
   if (!sourceSlug || !providerId) return null
 
   return { sourceSlug, providerId }
 }
+
+export const parseOpenConnectorVirtualSourceId = parseOpenConnectorProviderItemId
 
 export function matchesOpenConnectorProviderToolName(toolName: string, providerId: string): boolean {
   const normalized = toolName.toLowerCase()
@@ -60,11 +70,11 @@ export function getOpenConnectorActionCountForProvider(
   return providerTools.length > 0 ? providerTools.length : app.commonActions.length
 }
 
-export function buildOpenConnectorVirtualSourceItems(
+export function buildOpenConnectorProviderItems(
   source: LoadedSource,
   tools: McpToolWithPermission[]
-): OpenConnectorVirtualSourceItem[] {
-  if (!isOpenConnectorSource(source.config)) return []
+): OpenConnectorProviderItem[] {
+  if (!isOpenConnectorGatewaySource(source.config)) return []
 
   const discoveredIds = inferOpenConnectorProviderIdsFromToolNames(tools.map((tool) => tool.name))
   const discovered = new Set(discoveredIds)
@@ -76,7 +86,7 @@ export function buildOpenConnectorVirtualSourceItems(
     .map((app) => {
       const providerTools = getOpenConnectorToolsForProvider(tools, app.id)
       return {
-        id: buildOpenConnectorVirtualSourceId(source.config.slug, app.id),
+        id: buildOpenConnectorProviderItemId(source.config.slug, app.id),
         providerId: app.id,
         sourceSlug: source.config.slug,
         source,
@@ -86,3 +96,5 @@ export function buildOpenConnectorVirtualSourceItems(
       }
     })
 }
+
+export const buildOpenConnectorVirtualSourceItems = buildOpenConnectorProviderItems
