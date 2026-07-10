@@ -14,6 +14,7 @@ import { EditPopover, getEditConfig, type EditContextKey } from '@/components/ui
 import { openConnectorProviderItemsAtom } from '@/atoms/openconnector-sources'
 import { useAtomValue } from 'jotai'
 import type { OpenConnectorProviderItem } from '@/lib/openconnector'
+import { isOpenConnectorGatewaySource } from '@craft-agent/shared/connectors/openconnector'
 import type { LoadedSource, SourceFilter } from '../../../shared/types'
 
 const SOURCE_TYPE_CONFIG: Record<string, { labelKey: string; colorClass: string }> = {
@@ -84,9 +85,10 @@ export function SourcesListPanel({
       }))
     }
 
+    const visibleSources = sources.filter((source) => !isOpenConnectorGatewaySource(source.config))
     const filteredSources = !sourceFilter
-      ? sources
-      : sources.filter((source) => source.config.type === sourceFilter.sourceType)
+      ? visibleSources
+      : visibleSources.filter((source) => source.config.type === sourceFilter.sourceType)
 
     return filteredSources.map((source) => ({
       kind: 'source',

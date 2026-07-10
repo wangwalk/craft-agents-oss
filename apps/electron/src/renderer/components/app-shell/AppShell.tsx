@@ -1528,17 +1528,24 @@ function AppShellContent({
     return counts
   }, [activeSessionMetas, labelConfigs])
 
-  // Count sources by type for the Sources dropdown subcategories
+  const visibleSources = useMemo(
+    () => sources.filter((source) => !isOpenConnectorGatewaySource(source.config)),
+    [sources]
+  )
+
+  // Count visible sources by type for the Sources dropdown subcategories. The
+  // OpenConnector backing MCP source is hidden from Sources because OpenConnector
+  // has its own top-level product entry.
   const sourceTypeCounts = useMemo(() => {
     const counts = { api: 0, mcp: 0, local: 0 }
-    for (const source of sources) {
+    for (const source of visibleSources) {
       const t = source.config.type
       if (t === 'api' || t === 'mcp' || t === 'local') {
         counts[t]++
       }
     }
     return counts
-  }, [sources])
+  }, [visibleSources])
 
   // Count automations by type for the Automations dropdown subcategories
   const automationTypeCounts = useMemo(() => {
@@ -2520,7 +2527,7 @@ function AppShellContent({
                     {
                       id: "nav:sources",
                       title: t("sidebar.sources"),
-                      label: String(sources.length),
+                      label: String(visibleSources.length),
                       icon: DatabaseZap,
                       variant: (isSourcesNavigation(navState) && !sourceFilter) ? "default" : "ghost",
                       onClick: handleSourcesClick,
