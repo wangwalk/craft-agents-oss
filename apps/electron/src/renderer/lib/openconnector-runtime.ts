@@ -1,114 +1,37 @@
 import type { LoadedSource } from '../../shared/types'
-import { isOpenConnectorGatewaySource } from '@craft-agent/shared/connectors/openconnector'
+import {
+  isOpenConnectorGatewaySource,
+  type OpenConnectorActionSummary,
+  type OpenConnectorAdminSnapshot,
+  type OpenConnectorAuthSession,
+  type OpenConnectorConnectionRecord,
+  type OpenConnectorOAuthConfig,
+  type OpenConnectorProviderDefinition,
+  type OpenConnectorProviderSummary,
+  type OpenConnectorRunLog,
+  type OpenConnectorRunLogPage,
+  type OpenConnectorRuntimeSnapshotRpcResult,
+  type OpenConnectorRuntimeTokenSummary,
+} from '@craft-agent/shared/connectors/openconnector'
 
-export type OpenConnectorAuthDefinition =
-  | { type: 'no_auth' }
-  | {
-      type: 'api_key'
-      label?: string
-      placeholder?: string
-      description?: string
-      extraFields?: OpenConnectorCredentialField[]
-    }
-  | { type: 'custom_credential'; fields: OpenConnectorCredentialField[] }
-  | {
-      type: 'oauth2'
-      scopes: string[]
-      clientConfigFields?: OpenConnectorCredentialField[]
-    }
-
-export interface OpenConnectorCredentialField {
-  key: string
-  label: string
-  inputType: 'text' | 'password' | 'textarea' | 'json'
-  required: boolean
-  secret: boolean
-  placeholder?: string
-  description?: string
-}
-
-export type OpenConnectorJsonSchema = Record<string, unknown>
-
-export interface OpenConnectorActionDefinition {
-  id: string
-  service: string
-  name: string
-  description: string
-  requiredScopes: string[]
-  inputSchema: OpenConnectorJsonSchema
-  outputSchema: OpenConnectorJsonSchema
-  execution: {
-    locallyExecutable: boolean
-    catalogOnly: boolean
-    requiredAuthTypes: string[]
-    noAuthRunnable: boolean
-    needsCredential: boolean
-  }
-}
-
-export interface OpenConnectorProviderDefinition {
-  service: string
-  displayName: string
-  categories: string[]
-  authTypes: string[]
-  auth: OpenConnectorAuthDefinition[]
-  homepageUrl?: string
-  iconUrl?: string
-  actions: OpenConnectorActionDefinition[]
-}
-
-export interface OpenConnectorConnectionRecord {
-  id?: string
-  service: string
-  connectionName?: string
-  authType: string
-  configured?: boolean
-  virtual?: boolean
-  default?: boolean
-  profile?: Record<string, unknown> | null
-  metadata: Record<string, unknown>
-}
-
-export interface OpenConnectorOAuthConfig {
-  service: string
-  configured: boolean
-  clientId: string | null
-  expectedRedirectUri?: string
-  auth?: Extract<OpenConnectorAuthDefinition, { type: 'oauth2' }>
-}
-
-export interface OpenConnectorRuntimeTokenSummary {
-  id: string
-  name: string
-  createdAt: string
-  lastUsedAt?: string
-}
-
-export interface OpenConnectorRunLog {
-  id: string
-  actionId: string
-  caller: 'http' | 'mcp' | 'web'
-  startedAt: string
-  completedAt: string
-  durationMs: number
-  ok: boolean
-  inputSummary?: unknown
-  errorCode?: string
-  errorMessage?: string
-}
-
-export interface OpenConnectorRunLogPage {
-  items: OpenConnectorRunLog[]
-  nextCursor?: string
-}
-
-export interface OpenConnectorAuthSession {
-  authenticated: boolean
-  adminAuthConfigured: boolean
-}
+export type {
+  OpenConnectorActionDefinition,
+  OpenConnectorActionSummary,
+  OpenConnectorAuthDefinition,
+  OpenConnectorAuthSession,
+  OpenConnectorConnectionRecord,
+  OpenConnectorCredentialField,
+  OpenConnectorJsonSchema,
+  OpenConnectorOAuthConfig,
+  OpenConnectorProviderDefinition,
+  OpenConnectorProviderSummary,
+  OpenConnectorRunLog,
+  OpenConnectorRunLogPage,
+  OpenConnectorRuntimeTokenSummary,
+} from '@craft-agent/shared/connectors/openconnector'
 
 export interface OpenConnectorAppData {
-  providers: OpenConnectorProviderDefinition[]
+  providers: OpenConnectorProviderSummary[]
   connections: OpenConnectorConnectionRecord[]
   oauthConfigs: OpenConnectorOAuthConfig[]
   runtimeTokens: OpenConnectorRuntimeTokenSummary[]
@@ -176,6 +99,40 @@ export async function loadOpenConnectorRuntimeSnapshot(
     }
   }
 
+  let snapshot: OpenConnectorAdminSnapshot | null
+  try {
+    snapshot = await getOptionalAdminSnapshot(gatewaySource)
+  } catch (error) {
+    if (!(error instanceof OpenConnectorApiError) || error.status !== 401) throw error
+    const authSession = await getOptionalAuthSession(gatewaySource, options)
+    return {
+      baseUrl,
+      gatewaySource,
+      authSession,
+      data: emptyOpenConnectorAppData,
+      healthOk: false,
+    }
+  }
+
+  if (snapshot) {
+    return {
+      baseUrl,
+      gatewaySource,
+      authSession: snapshot.authSession,
+      data: {
+        providers: snapshot.providers,
+        connections: snapshot.connections,
+        oauthConfigs: snapshot.oauthConfigs,
+        runtimeTokens: snapshot.runtimeTokens,
+        runs: snapshot.runs.items,
+        runsNextCursor: snapshot.runs.nextCursor,
+      },
+      healthOk: snapshot.healthOk,
+    }
+  }
+
+  // Compatibility path for older Craft/OpenConnector backends that do not yet
+  // expose the typed administration snapshot RPC.
   const authSession = await getOptionalAuthSession(gatewaySource, options)
   if (authSession && !authSession.authenticated) {
     return {
@@ -187,14 +144,12 @@ export async function loadOpenConnectorRuntimeSnapshot(
     }
   }
 
-  const [providers, connections, oauthConfigs, runtimeTokens, runPage, healthOk] = await Promise.all([
-    openConnectorGet<OpenConnectorProviderDefinition[]>(gatewaySource, '/api/providers', options),
-    openConnectorGet<OpenConnectorConnectionRecord[]>(gatewaySource, '/api/connections', options),
-    openConnectorGet<OpenConnectorOAuthConfig[]>(gatewaySource, '/api/oauth/configs', options),
-    openConnectorGet<OpenConnectorRuntimeTokenSummary[]>(gatewaySource, '/api/runtime-tokens', options),
-    openConnectorGet<OpenConnectorRunLogPage>(gatewaySource, '/api/runs', options),
-    probeOpenConnectorHealth(gatewaySource, options),
-  ])
+  const providers = await openConnectorGet<OpenConnectorProviderDefinition[]>(gatewaySource, '/api/providers', options)
+  const connections = await openConnectorGet<OpenConnectorConnectionRecord[]>(gatewaySource, '/api/connections', options)
+  const oauthConfigs = await openConnectorGet<OpenConnectorOAuthConfig[]>(gatewaySource, '/api/oauth/configs', options)
+  const runtimeTokens = await openConnectorGet<OpenConnectorRuntimeTokenSummary[]>(gatewaySource, '/api/runtime-tokens', options)
+  const runPage = await openConnectorGet<OpenConnectorRunLogPage>(gatewaySource, '/api/runs', options)
+  const healthOk = await probeOpenConnectorHealth(gatewaySource, options)
 
   return {
     baseUrl,
@@ -210,6 +165,35 @@ export async function loadOpenConnectorRuntimeSnapshot(
     },
     healthOk,
   }
+}
+
+async function getOptionalAdminSnapshot(
+  gatewaySource: LoadedSource,
+): Promise<OpenConnectorAdminSnapshot | null> {
+  // Renderer HMR can update before Electron reloads the preload script. Treat a
+  // missing method as an older backend/preload and use the compatibility path.
+  if (typeof window.electronAPI.getOpenConnectorRuntimeSnapshot !== 'function') return null
+
+  let result: OpenConnectorRuntimeSnapshotRpcResult
+  try {
+    result = await window.electronAPI.getOpenConnectorRuntimeSnapshot(
+      gatewaySource.workspaceId,
+      gatewaySource.config.slug,
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes('No handler for: sources:getOpenConnectorRuntimeSnapshot')) return null
+    throw error
+  }
+
+  if (!result.success) {
+    if (result.status === 404) return null
+    throw new OpenConnectorApiError(result.status ?? 0, result.error ?? 'OpenConnector snapshot request failed')
+  }
+  if (!result.data) {
+    throw new OpenConnectorApiError(0, 'OpenConnector snapshot response did not include data')
+  }
+  return result.data
 }
 
 async function getOptionalAuthSession(
@@ -292,7 +276,7 @@ export function createOpenConnectorOverviewSummary(data: OpenConnectorAppData) {
 }
 
 export function resolveOpenConnectorProviderConnectionStatus(
-  provider: OpenConnectorProviderDefinition,
+  provider: OpenConnectorProviderSummary,
   connections: OpenConnectorConnectionRecord[],
   oauthConfigs: OpenConnectorOAuthConfig[],
 ): OpenConnectorProviderConnectionStatus {
@@ -307,7 +291,7 @@ export function resolveOpenConnectorProviderConnectionStatus(
   }
 }
 
-export function isNoAuthOnlyOpenConnectorProvider(provider: OpenConnectorProviderDefinition): boolean {
+export function isNoAuthOnlyOpenConnectorProvider(provider: OpenConnectorProviderSummary): boolean {
   const authTypes = provider.auth.length > 0 ? provider.auth.map((auth) => auth.type) : provider.authTypes
   return authTypes.length === 0 || authTypes.every((authType) => authType === 'no_auth')
 }
@@ -326,7 +310,7 @@ function isUsableCredentialConnection(connection: OpenConnectorConnectionRecord 
   )
 }
 
-function providerHasOAuth(provider: OpenConnectorProviderDefinition): boolean {
+function providerHasOAuth(provider: OpenConnectorProviderSummary): boolean {
   return provider.auth.some((auth) => auth.type === 'oauth2') || provider.authTypes.includes('oauth2')
 }
 

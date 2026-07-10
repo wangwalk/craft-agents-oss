@@ -254,6 +254,7 @@ export const RPC_CHANNELS = {
     GET_PERMISSIONS: 'sources:getPermissions',
     GET_MCP_TOOLS: 'sources:getMcpTools',
     GET_OPENCONNECTOR_RUNTIME_JSON: 'sources:getOpenConnectorRuntimeJson',
+    GET_OPENCONNECTOR_RUNTIME_SNAPSHOT: 'sources:getOpenConnectorRuntimeSnapshot',
   },
   oauth: {
     START: 'oauth:start',

@@ -9,16 +9,18 @@ import { useOpenConnectorRuntime } from '@/hooks/useOpenConnectorRuntime'
 import {
   compactOpenConnectorJson,
   createOpenConnectorOverviewSummary,
+  openConnectorGet,
   formatOpenConnectorDate,
   formatOpenConnectorDuration,
   resolveOpenConnectorProviderConnectionStatus,
   type OpenConnectorActionDefinition,
+  type OpenConnectorActionSummary,
   type OpenConnectorAppData,
-  type OpenConnectorProviderDefinition,
+  type OpenConnectorProviderSummary,
   type OpenConnectorRunLog,
   type OpenConnectorRuntimeTokenSummary,
 } from '@/lib/openconnector-runtime'
-import type { OpenConnectorDetail, OpenConnectorSection } from '../../../shared/types'
+import type { LoadedSource, OpenConnectorDetail, OpenConnectorSection } from '../../../shared/types'
 
 export interface OpenConnectorConsolePageProps {
   section: OpenConnectorSection
@@ -72,7 +74,7 @@ export function OpenConnectorConsolePage({ section, details }: OpenConnectorCons
           <>
             {section === 'overview' ? <OverviewSection data={data} summary={summary} healthOk={runtime.healthOk} baseUrl={runtime.baseUrl} onOpen={openRuntimeUrl} /> : null}
             {section === 'providers' ? <ProvidersSection data={data} selectedService={details?.type === 'provider' ? details.service : null} baseUrl={runtime.baseUrl} /> : null}
-            {section === 'actions' ? <ActionsSection data={data} selectedActionId={details?.type === 'action' ? details.actionId : null} baseUrl={runtime.baseUrl} /> : null}
+            {section === 'actions' ? <ActionsSection data={data} selectedActionId={details?.type === 'action' ? details.actionId : null} baseUrl={runtime.baseUrl} gatewaySource={runtime.gatewaySource} /> : null}
             {section === 'runs' ? <RunsSection runs={data.runs} /> : null}
             {section === 'api-keys' ? <ApiKeysSection tokens={data.runtimeTokens} baseUrl={runtime.baseUrl} /> : null}
             {section === 'docs' ? <DocsSection baseUrl={runtime.baseUrl} onOpen={openRuntimeUrl} /> : null}
@@ -227,7 +229,7 @@ function ProvidersSection({ data, selectedService, baseUrl }: { data: OpenConnec
   )
 }
 
-function ProviderDetail({ provider, data, baseUrl }: { provider: OpenConnectorProviderDefinition; data: OpenConnectorAppData; baseUrl: string | null }) {
+function ProviderDetail({ provider, data, baseUrl }: { provider: OpenConnectorProviderSummary; data: OpenConnectorAppData; baseUrl: string | null }) {
   const status = resolveOpenConnectorProviderConnectionStatus(provider, data.connections, data.oauthConfigs)
   const oauthConfig = data.oauthConfigs.find((config) => config.service === provider.service)
   const relatedActions = provider.actions.slice().sort((a, b) => a.id.localeCompare(b.id))
@@ -268,7 +270,7 @@ function ProviderDetail({ provider, data, baseUrl }: { provider: OpenConnectorPr
   )
 }
 
-function ActionsSection({ data, selectedActionId, baseUrl }: { data: OpenConnectorAppData; selectedActionId: string | null; baseUrl: string | null }) {
+function ActionsSection({ data, selectedActionId, baseUrl, gatewaySource }: { data: OpenConnectorAppData; selectedActionId: string | null; baseUrl: string | null; gatewaySource: LoadedSource | null }) {
   const [query, setQuery] = React.useState('')
   const actions = React.useMemo(() => data.providers.flatMap((provider) => provider.actions), [data.providers])
   const selected = selectedActionId ? actions.find((action) => action.id === selectedActionId) : null
@@ -283,7 +285,7 @@ function ActionsSection({ data, selectedActionId, baseUrl }: { data: OpenConnect
   }, [actions, query])
 
   if (selected) {
-    return <ActionDetail action={selected} baseUrl={baseUrl} />
+    return <ActionDetail action={selected} baseUrl={baseUrl} gatewaySource={gatewaySource} />
   }
 
   return (
@@ -295,7 +297,7 @@ function ActionsSection({ data, selectedActionId, baseUrl }: { data: OpenConnect
   )
 }
 
-function ActionList({ actions, compact = false }: { actions: OpenConnectorActionDefinition[]; compact?: boolean }) {
+function ActionList({ actions, compact = false }: { actions: OpenConnectorActionSummary[]; compact?: boolean }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-border/60 bg-card">
       <table className="w-full text-left text-sm">
@@ -327,7 +329,28 @@ function ActionList({ actions, compact = false }: { actions: OpenConnectorAction
   )
 }
 
-function ActionDetail({ action, baseUrl }: { action: OpenConnectorActionDefinition; baseUrl: string | null }) {
+function ActionDetail({ action, baseUrl, gatewaySource }: { action: OpenConnectorActionSummary; baseUrl: string | null; gatewaySource: LoadedSource | null }) {
+  const [definition, setDefinition] = React.useState<OpenConnectorActionDefinition | null>(null)
+  const [definitionError, setDefinitionError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    let active = true
+    setDefinition(null)
+    setDefinitionError(null)
+    if (!gatewaySource) return () => { active = false }
+
+    void openConnectorGet<OpenConnectorActionDefinition>(
+      gatewaySource,
+      `/api/actions/${encodeURIComponent(action.id)}`,
+    ).then((value) => {
+      if (active) setDefinition(value)
+    }).catch((error) => {
+      if (active) setDefinitionError(error instanceof Error ? error.message : String(error))
+    })
+
+    return () => { active = false }
+  }, [action.id, gatewaySource])
+
   const askPrompt = `Use OpenConnector action \`${action.id}\`. First inspect its guide and input schema, then ask me for any missing inputs before execution.`
   const guideUrl = baseUrl ? `${baseUrl}/api/actions/${action.id}/agent.md` : null
   return (
@@ -350,10 +373,16 @@ function ActionDetail({ action, baseUrl }: { action: OpenConnectorActionDefiniti
           </div>
         </div>
       </SectionCard>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <SchemaPanel title="Input schema" schema={action.inputSchema} />
-        <SchemaPanel title="Output schema" schema={action.outputSchema} />
-      </div>
+      {definition ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <SchemaPanel title="Input schema" schema={definition.inputSchema} />
+          <SchemaPanel title="Output schema" schema={definition.outputSchema} />
+        </div>
+      ) : definitionError ? (
+        <SectionCard title="Action schemas"><p className="text-sm text-destructive">{definitionError}</p></SectionCard>
+      ) : (
+        <SectionCard title="Action schemas"><div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading schemas…</div></SectionCard>
+      )}
     </div>
   )
 }
@@ -469,7 +498,7 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
   )
 }
 
-function ProviderIcon({ provider, size = 'md' }: { provider: OpenConnectorProviderDefinition; size?: 'md' | 'lg' }) {
+function ProviderIcon({ provider, size = 'md' }: { provider: OpenConnectorProviderSummary; size?: 'md' | 'lg' }) {
   const className = size === 'lg' ? 'h-14 w-14 rounded-2xl' : 'h-10 w-10 rounded-xl'
   return (
     <div className={`${className} flex shrink-0 items-center justify-center overflow-hidden bg-foreground/[0.05] text-sm font-semibold`}>
@@ -485,7 +514,7 @@ function ProviderStatusBadge({ status }: { status: ReturnType<typeof resolveOpen
   return <Badge variant="outline">Connect</Badge>
 }
 
-function ExecutionBadge({ action }: { action: OpenConnectorActionDefinition }) {
+function ExecutionBadge({ action }: { action: OpenConnectorActionSummary }) {
   if (action.execution.locallyExecutable) return <Badge className="bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/10">Local</Badge>
   if (action.execution.catalogOnly) return <Badge variant="outline">Catalog only</Badge>
   return <Badge variant="secondary">Runtime</Badge>

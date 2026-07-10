@@ -271,6 +271,7 @@ const EXPECTED_CHANNELS: string[] = [
   'sources:get',
   'sources:getMcpTools',
   'sources:getOpenConnectorRuntimeJson',
+  'sources:getOpenConnectorRuntimeSnapshot',
   'sources:getPermissions',
   'sources:saveCredentials',
   'sources:startOAuth',

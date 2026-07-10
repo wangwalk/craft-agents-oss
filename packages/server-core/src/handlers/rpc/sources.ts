@@ -19,6 +19,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.permissions.GET_DEFAULTS,
   RPC_CHANNELS.sources.GET_MCP_TOOLS,
   RPC_CHANNELS.sources.GET_OPENCONNECTOR_RUNTIME_JSON,
+  RPC_CHANNELS.sources.GET_OPENCONNECTOR_RUNTIME_SNAPSHOT,
 ] as const
 
 export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): void {
@@ -172,13 +173,57 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
+  // Load the OpenConnector administration overview in one backend request.
+  // This avoids fanning multiple RPCs out over the same remote workspace
+  // WebSocket and then proxying each one separately to a localhost runtime.
+  server.handle(RPC_CHANNELS.sources.GET_OPENCONNECTOR_RUNTIME_SNAPSHOT, async (ctx, workspaceId: string, sourceSlug: string) => {
+    const workspace = getWorkspaceByNameOrId(ctx.workspaceId ?? workspaceId)
+    if (!workspace) return { success: false, error: 'Workspace not found' }
+
+    try {
+      const sources = await loadWorkspaceSources(workspace.rootPath)
+      const source = sources.find(s => s.config.slug === sourceSlug)
+      if (!source) return { success: false, error: 'Source not found' }
+      if (!isOpenConnectorGatewaySource(source.config)) return { success: false, error: 'Source is not an OpenConnector gateway' }
+      if (!source.config.mcp?.url) return { success: false, error: 'OpenConnector gateway MCP URL is missing' }
+
+      const baseUrl = resolveOpenConnectorRuntimeBaseUrl(source)
+      if (!baseUrl) return { success: false, error: 'Could not resolve OpenConnector runtime URL' }
+
+      const response = await fetch(new URL('/api/admin/snapshot', baseUrl), {
+        headers: await openConnectorRuntimeHeaders(source),
+        signal: AbortSignal.timeout(OPENCONNECTOR_SNAPSHOT_TIMEOUT_MS),
+      })
+      const data = await response.json().catch(() => undefined)
+      if (!response.ok) {
+        return {
+          success: false,
+          status: response.status,
+          error: openConnectorErrorMessage(data) ?? `OpenConnector snapshot request failed with ${response.status}`,
+        }
+      }
+      return { success: true, status: response.status, data }
+    } catch (error) {
+      const timedOut = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')
+      const message = timedOut
+        ? `OpenConnector snapshot request timed out after ${OPENCONNECTOR_SNAPSHOT_TIMEOUT_MS}ms`
+        : error instanceof Error ? error.message : 'Failed to fetch OpenConnector runtime snapshot'
+      log.error('Failed to fetch OpenConnector runtime snapshot:', error)
+      return { success: false, status: timedOut ? 504 : undefined, error: message }
+    }
+  })
+
   // Get OpenConnector runtime JSON through the workspace/backend side.
   // Renderer-side fetches to localhost break for remote workspaces and may hit
   // CORS. Keep this intentionally constrained to OpenConnector gateway sources
   // and a small readonly endpoint allowlist so it does not become a generic
   // arbitrary URL proxy.
-  server.handle(RPC_CHANNELS.sources.GET_OPENCONNECTOR_RUNTIME_JSON, async (_ctx, workspaceId: string, sourceSlug: string, path: string) => {
-    const workspace = getWorkspaceByNameOrId(workspaceId)
+  server.handle(RPC_CHANNELS.sources.GET_OPENCONNECTOR_RUNTIME_JSON, async (ctx, workspaceId: string, sourceSlug: string, path: string) => {
+    // LoadedSource.workspaceId is derived from the workspace folder basename,
+    // which may differ from the configured workspace ID/name on remote servers.
+    // The authenticated connection context is authoritative for this
+    // workspace-scoped endpoint; retain the argument as a compatibility fallback.
+    const workspace = getWorkspaceByNameOrId(ctx.workspaceId ?? workspaceId)
     if (!workspace) return { success: false, error: 'Workspace not found' }
 
     try {
@@ -303,6 +348,8 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 }
+
+const OPENCONNECTOR_SNAPSHOT_TIMEOUT_MS = 10_000
 
 const OPENCONNECTOR_RUNTIME_ALLOWED_PATHS = new Set([
   '/api/auth/session',

@@ -8,6 +8,135 @@ export interface OpenConnectorProviderApp {
   commonActions: string[];
 }
 
+export type OpenConnectorAuthDefinition =
+  | { type: 'no_auth' }
+  | {
+      type: 'api_key';
+      label?: string;
+      placeholder?: string;
+      description?: string;
+      extraFields?: OpenConnectorCredentialField[];
+    }
+  | { type: 'custom_credential'; fields: OpenConnectorCredentialField[] }
+  | {
+      type: 'oauth2';
+      scopes: string[];
+      clientConfigFields?: OpenConnectorCredentialField[];
+    };
+
+export interface OpenConnectorCredentialField {
+  key: string;
+  label: string;
+  inputType: 'text' | 'password' | 'textarea' | 'json';
+  required: boolean;
+  secret: boolean;
+  placeholder?: string;
+  description?: string;
+}
+
+export type OpenConnectorJsonSchema = Record<string, unknown>;
+
+export interface OpenConnectorActionDefinition {
+  id: string;
+  service: string;
+  name: string;
+  description: string;
+  requiredScopes: string[];
+  inputSchema: OpenConnectorJsonSchema;
+  outputSchema: OpenConnectorJsonSchema;
+  execution: {
+    locallyExecutable: boolean;
+    catalogOnly: boolean;
+    requiredAuthTypes: string[];
+    noAuthRunnable: boolean;
+    needsCredential: boolean;
+  };
+}
+
+export type OpenConnectorActionSummary = Omit<OpenConnectorActionDefinition, 'inputSchema' | 'outputSchema'>;
+
+export interface OpenConnectorProviderDefinition {
+  service: string;
+  displayName: string;
+  categories: string[];
+  authTypes: string[];
+  auth: OpenConnectorAuthDefinition[];
+  homepageUrl?: string;
+  iconUrl?: string;
+  actions: OpenConnectorActionDefinition[];
+}
+
+export type OpenConnectorProviderSummary = Omit<OpenConnectorProviderDefinition, 'actions'> & {
+  actions: OpenConnectorActionSummary[];
+};
+
+export interface OpenConnectorConnectionRecord {
+  id?: string;
+  service: string;
+  connectionName?: string;
+  authType: string;
+  configured?: boolean;
+  virtual?: boolean;
+  default?: boolean;
+  profile?: Record<string, unknown> | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface OpenConnectorOAuthConfig {
+  service: string;
+  configured: boolean;
+  clientId: string | null;
+  expectedRedirectUri?: string;
+  auth?: Extract<OpenConnectorAuthDefinition, { type: 'oauth2' }>;
+}
+
+export interface OpenConnectorRuntimeTokenSummary {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt?: string;
+}
+
+export interface OpenConnectorRunLog {
+  id: string;
+  actionId: string;
+  caller: 'http' | 'mcp' | 'web';
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  ok: boolean;
+  inputSummary?: unknown;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+export interface OpenConnectorRunLogPage {
+  items: OpenConnectorRunLog[];
+  nextCursor?: string;
+}
+
+export interface OpenConnectorAuthSession {
+  authenticated: boolean;
+  adminAuthConfigured: boolean;
+}
+
+export interface OpenConnectorAdminSnapshot {
+  authSession: OpenConnectorAuthSession;
+  providers: OpenConnectorProviderSummary[];
+  connections: OpenConnectorConnectionRecord[];
+  oauthConfigs: OpenConnectorOAuthConfig[];
+  runtimeTokens: OpenConnectorRuntimeTokenSummary[];
+  runs: OpenConnectorRunLogPage;
+  healthOk: boolean;
+}
+
+export interface OpenConnectorRuntimeSnapshotRpcResult {
+  success: boolean;
+  data?: OpenConnectorAdminSnapshot;
+  status?: number;
+  error?: string;
+}
+
 export const OPENCONNECTOR_TEMPLATE_ID = 'openconnector';
 export const DEFAULT_OPENCONNECTOR_MCP_URL = 'http://localhost:3001/mcp';
 
