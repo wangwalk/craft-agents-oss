@@ -483,6 +483,7 @@ export interface ElectronAPI {
   getWorkspacePermissionsConfig(workspaceId: string): Promise<import('@craft-agent/shared/agent').PermissionsConfigFile | null>
   getDefaultPermissionsConfig(): Promise<{ config: import('@craft-agent/shared/agent').PermissionsConfigFile | null; path: string }>
   getMcpTools(workspaceId: string, sourceSlug: string): Promise<McpToolsResult>
+  getOpenConnectorRuntimeJson(workspaceId: string, sourceSlug: string, path: string): Promise<{ success: boolean; data?: unknown; status?: number; error?: string }>
 
   // OAuth (server-owned credentials, client-orchestrated flow)
   performOAuth(args: { sourceSlug: string; sessionId?: string; authRequestId?: string }): Promise<{ success: boolean; error?: string; email?: string }>

@@ -166,7 +166,7 @@ export async function loadOpenConnectorRuntimeSnapshot(
   options: { adminToken?: string } = {},
 ): Promise<OpenConnectorRuntimeSnapshot> {
   const baseUrl = resolveOpenConnectorRuntimeBaseUrl(gatewaySource)
-  if (!baseUrl) {
+  if (!gatewaySource || !baseUrl) {
     return {
       baseUrl: null,
       gatewaySource,
@@ -176,7 +176,7 @@ export async function loadOpenConnectorRuntimeSnapshot(
     }
   }
 
-  const authSession = await getOptionalAuthSession(baseUrl, options)
+  const authSession = await getOptionalAuthSession(gatewaySource, options)
   if (authSession && !authSession.authenticated) {
     return {
       baseUrl,
@@ -188,12 +188,12 @@ export async function loadOpenConnectorRuntimeSnapshot(
   }
 
   const [providers, connections, oauthConfigs, runtimeTokens, runPage, healthOk] = await Promise.all([
-    openConnectorGet<OpenConnectorProviderDefinition[]>(baseUrl, '/api/providers', options),
-    openConnectorGet<OpenConnectorConnectionRecord[]>(baseUrl, '/api/connections', options),
-    openConnectorGet<OpenConnectorOAuthConfig[]>(baseUrl, '/api/oauth/configs', options),
-    openConnectorGet<OpenConnectorRuntimeTokenSummary[]>(baseUrl, '/api/runtime-tokens', options),
-    openConnectorGet<OpenConnectorRunLogPage>(baseUrl, '/api/runs', options),
-    probeOpenConnectorHealth(baseUrl, options),
+    openConnectorGet<OpenConnectorProviderDefinition[]>(gatewaySource, '/api/providers', options),
+    openConnectorGet<OpenConnectorConnectionRecord[]>(gatewaySource, '/api/connections', options),
+    openConnectorGet<OpenConnectorOAuthConfig[]>(gatewaySource, '/api/oauth/configs', options),
+    openConnectorGet<OpenConnectorRuntimeTokenSummary[]>(gatewaySource, '/api/runtime-tokens', options),
+    openConnectorGet<OpenConnectorRunLogPage>(gatewaySource, '/api/runs', options),
+    probeOpenConnectorHealth(gatewaySource, options),
   ])
 
   return {
@@ -213,11 +213,11 @@ export async function loadOpenConnectorRuntimeSnapshot(
 }
 
 async function getOptionalAuthSession(
-  baseUrl: string,
+  gatewaySource: LoadedSource,
   options: { adminToken?: string },
 ): Promise<OpenConnectorAuthSession | null> {
   try {
-    return await openConnectorGet<OpenConnectorAuthSession>(baseUrl, '/api/auth/session', options)
+    return await openConnectorGet<OpenConnectorAuthSession>(gatewaySource, '/api/auth/session', options)
   } catch (error) {
     // Older OpenConnector builds may not expose the auth session endpoint. Treat
     // the admin API as open and let the real data requests report any failures.
@@ -229,56 +229,31 @@ async function getOptionalAuthSession(
 }
 
 export async function openConnectorGet<T>(
-  baseUrl: string,
+  gatewaySource: LoadedSource,
   path: string,
-  options: { adminToken?: string } = {},
+  _options: { adminToken?: string } = {},
 ): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    headers: headersFor(options),
-    credentials: 'omit',
-  })
-  return readJson<T>(response)
+  const result = await window.electronAPI.getOpenConnectorRuntimeJson(
+    gatewaySource.workspaceId,
+    gatewaySource.config.slug,
+    path,
+  )
+  if (!result.success) {
+    throw new OpenConnectorApiError(result.status ?? 0, result.error ?? 'OpenConnector request failed')
+  }
+  return result.data as T
 }
 
 async function probeOpenConnectorHealth(
-  baseUrl: string,
+  gatewaySource: LoadedSource,
   options: { adminToken?: string },
 ): Promise<boolean> {
   try {
-    const response = await fetch(`${baseUrl}/v1/health`, {
-      headers: headersFor(options),
-      credentials: 'omit',
-    })
-    return response.ok
+    await openConnectorGet<unknown>(gatewaySource, '/v1/health', options)
+    return true
   } catch {
     return false
   }
-}
-
-function headersFor(options: { adminToken?: string }): Headers {
-  const headers = new Headers()
-  const token = options.adminToken?.trim()
-  if (token) headers.set('authorization', `Bearer ${token}`)
-  return headers
-}
-
-async function readJson<T>(response: Response): Promise<T> {
-  const payload = await response.json().catch(() => null)
-  if (!response.ok) {
-    throw new OpenConnectorApiError(response.status, errorMessage(payload) ?? `OpenConnector request failed with ${response.status}`)
-  }
-  return payload as T
-}
-
-function errorMessage(payload: unknown): string | undefined {
-  if (!payload || typeof payload !== 'object') return undefined
-  if ('errorMessage' in payload && typeof payload.errorMessage === 'string') return payload.errorMessage
-  if ('message' in payload && typeof payload.message === 'string') return payload.message
-  if ('error' in payload && payload.error && typeof payload.error === 'object') {
-    const error = payload.error as { message?: unknown }
-    return typeof error.message === 'string' ? error.message : undefined
-  }
-  return undefined
 }
 
 export class OpenConnectorApiError extends Error {

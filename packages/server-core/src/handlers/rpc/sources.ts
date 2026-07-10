@@ -3,6 +3,8 @@ import { getWorkspaceByNameOrId } from '@craft-agent/shared/config'
 import { loadWorkspaceSources } from '@craft-agent/shared/sources'
 import { safeJsonParse } from '@craft-agent/shared/utils/files'
 import { getCredentialManager } from '@craft-agent/shared/credentials'
+import { isOpenConnectorGatewaySource } from '@craft-agent/shared/connectors/openconnector'
+import type { LoadedSource } from '@craft-agent/shared/sources'
 import type { RpcServer } from '@craft-agent/server-core/transport'
 import type { HandlerDeps } from '../handler-deps'
 
@@ -16,6 +18,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.workspace.GET_PERMISSIONS,
   RPC_CHANNELS.permissions.GET_DEFAULTS,
   RPC_CHANNELS.sources.GET_MCP_TOOLS,
+  RPC_CHANNELS.sources.GET_OPENCONNECTOR_RUNTIME_JSON,
 ] as const
 
 export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): void {
@@ -169,6 +172,44 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
+  // Get OpenConnector runtime JSON through the workspace/backend side.
+  // Renderer-side fetches to localhost break for remote workspaces and may hit
+  // CORS. Keep this intentionally constrained to OpenConnector gateway sources
+  // and a small readonly endpoint allowlist so it does not become a generic
+  // arbitrary URL proxy.
+  server.handle(RPC_CHANNELS.sources.GET_OPENCONNECTOR_RUNTIME_JSON, async (_ctx, workspaceId: string, sourceSlug: string, path: string) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) return { success: false, error: 'Workspace not found' }
+
+    try {
+      const sources = await loadWorkspaceSources(workspace.rootPath)
+      const source = sources.find(s => s.config.slug === sourceSlug)
+      if (!source) return { success: false, error: 'Source not found' }
+      if (!isOpenConnectorGatewaySource(source.config)) return { success: false, error: 'Source is not an OpenConnector gateway' }
+      if (!source.config.mcp?.url) return { success: false, error: 'OpenConnector gateway MCP URL is missing' }
+      if (!isAllowedOpenConnectorRuntimePath(path)) return { success: false, error: 'OpenConnector runtime path is not allowed' }
+
+      const baseUrl = resolveOpenConnectorRuntimeBaseUrl(source)
+      if (!baseUrl) return { success: false, error: 'Could not resolve OpenConnector runtime URL' }
+
+      const url = new URL(path, baseUrl)
+      const response = await fetch(url, { headers: await openConnectorRuntimeHeaders(source) })
+      const data = await response.json().catch(async () => ({ text: await response.text().catch(() => '') }))
+      if (!response.ok) {
+        return {
+          success: false,
+          status: response.status,
+          error: openConnectorErrorMessage(data) ?? `OpenConnector request failed with ${response.status}`,
+          data,
+        }
+      }
+      return { success: true, status: response.status, data }
+    } catch (error) {
+      log.error('Failed to fetch OpenConnector runtime JSON:', error)
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to fetch OpenConnector runtime JSON' }
+    }
+  })
+
   // Get MCP tools for a source with permission status
   server.handle(RPC_CHANNELS.sources.GET_MCP_TOOLS, async (_ctx, workspaceId: string, sourceSlug: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
@@ -261,4 +302,73 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
       return { success: false, error: errorMessage }
     }
   })
+}
+
+const OPENCONNECTOR_RUNTIME_ALLOWED_PATHS = new Set([
+  '/api/auth/session',
+  '/api/providers',
+  '/api/connections',
+  '/api/oauth/configs',
+  '/api/runtime-tokens',
+  '/api/runs',
+  '/api/actions',
+  '/api/actions/search',
+  '/v1/health',
+])
+
+function isAllowedOpenConnectorRuntimePath(path: string): boolean {
+  if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) return false
+  let parsed: URL
+  try {
+    parsed = new URL(path, 'http://openconnector.local')
+  } catch {
+    return false
+  }
+  if (parsed.origin !== 'http://openconnector.local') return false
+  if (parsed.pathname.includes('..')) return false
+  if (OPENCONNECTOR_RUNTIME_ALLOWED_PATHS.has(parsed.pathname)) return true
+  if (/^\/api\/actions\/[^/]+$/.test(parsed.pathname)) return true
+  if (/^\/api\/actions\/[^/]+\/agent\.md$/.test(parsed.pathname)) return true
+  return false
+}
+
+function resolveOpenConnectorRuntimeBaseUrl(source: LoadedSource): string | null {
+  const rawUrl = source.config.mcp?.url?.trim()
+  if (!rawUrl) return null
+  try {
+    const parsed = new URL(rawUrl)
+    const pathname = parsed.pathname.replace(/\/+$/, '')
+    if (pathname.endsWith('/mcp')) {
+      parsed.pathname = pathname.slice(0, -'/mcp'.length) || '/'
+    }
+    parsed.search = ''
+    parsed.hash = ''
+    return parsed.toString().replace(/\/+$/, '')
+  } catch {
+    return rawUrl.replace(/\/mcp\/?$/, '').replace(/\/+$/, '')
+  }
+}
+
+async function openConnectorRuntimeHeaders(source: LoadedSource): Promise<Headers> {
+  const headers = new Headers()
+  if (source.config.mcp?.authType === 'oauth' || source.config.mcp?.authType === 'bearer') {
+    const credentialManager = getCredentialManager()
+    const credentialId = source.config.mcp.authType === 'oauth'
+      ? { type: 'source_oauth' as const, workspaceId: source.workspaceId, sourceId: source.config.slug }
+      : { type: 'source_bearer' as const, workspaceId: source.workspaceId, sourceId: source.config.slug }
+    const credential = await credentialManager.get(credentialId)
+    if (credential?.value) headers.set('authorization', `Bearer ${credential.value}`)
+  }
+  return headers
+}
+
+function openConnectorErrorMessage(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined
+  if ('errorMessage' in payload && typeof payload.errorMessage === 'string') return payload.errorMessage
+  if ('message' in payload && typeof payload.message === 'string') return payload.message
+  if ('error' in payload && payload.error && typeof payload.error === 'object') {
+    const error = payload.error as { message?: unknown }
+    return typeof error.message === 'string' ? error.message : undefined
+  }
+  return undefined
 }

@@ -253,6 +253,7 @@ export const RPC_CHANNELS = {
     CHANGED: 'sources:changed',
     GET_PERMISSIONS: 'sources:getPermissions',
     GET_MCP_TOOLS: 'sources:getMcpTools',
+    GET_OPENCONNECTOR_RUNTIME_JSON: 'sources:getOpenConnectorRuntimeJson',
   },
   oauth: {
     START: 'oauth:start',
