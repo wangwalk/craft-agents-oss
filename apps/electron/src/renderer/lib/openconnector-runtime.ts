@@ -233,11 +233,23 @@ export async function openConnectorGet<T>(
   path: string,
   _options: { adminToken?: string } = {},
 ): Promise<T> {
-  const result = await window.electronAPI.getOpenConnectorRuntimeJson(
-    gatewaySource.workspaceId,
-    gatewaySource.config.slug,
-    path,
-  )
+  let result: { success: boolean; data?: unknown; status?: number; error?: string }
+  try {
+    result = await window.electronAPI.getOpenConnectorRuntimeJson(
+      gatewaySource.workspaceId,
+      gatewaySource.config.slug,
+      path,
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes('No handler for: sources:getOpenConnectorRuntimeJson')) {
+      throw new OpenConnectorApiError(
+        0,
+        'Craft backend does not have the OpenConnector runtime proxy handler yet. Restart or update the workspace backend/server so it includes sources:getOpenConnectorRuntimeJson.',
+      )
+    }
+    throw error
+  }
   if (!result.success) {
     throw new OpenConnectorApiError(result.status ?? 0, result.error ?? 'OpenConnector request failed')
   }
