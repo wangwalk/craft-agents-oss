@@ -146,7 +146,7 @@ export const OPENCONNECTOR_PROVIDER_APPS: OpenConnectorProviderApp[] = [
     name: 'Umami',
     icon: '📊',
     tagline: 'Website analytics, pageviews, visitors, realtime traffic, and event metrics',
-    commonActions: ['list_websites', 'get_website_stats', 'get_website_metrics', 'get_realtime'],
+    commonActions: ['list_websites', 'get_website_stats', 'get_metrics', 'get_realtime'],
   },
   {
     id: 'beszel',
