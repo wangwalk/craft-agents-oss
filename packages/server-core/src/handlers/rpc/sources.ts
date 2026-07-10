@@ -256,16 +256,15 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
-  // Mutate OpenConnector provider connections through the workspace/backend side.
+  // Mutate provider connections and start OAuth through the workspace/backend side.
   // Credentials stay inside the renderer -> authenticated RPC -> localhost
-  // request path and are never logged or persisted by Craft. Keep the proxy
-  // restricted to connection endpoints so it cannot become an arbitrary write
-  // tunnel into the OpenConnector administration API.
+  // request path and are never logged or persisted by Craft. Keep the proxy on
+  // an explicit method/path matrix so it cannot become an arbitrary write tunnel.
   server.handle(RPC_CHANNELS.sources.REQUEST_OPENCONNECTOR_RUNTIME_JSON, async (
     ctx,
     workspaceId: string,
     sourceSlug: string,
-    request: { method: 'PUT' | 'DELETE'; path: string; body?: unknown },
+    request: { method: 'POST' | 'PUT' | 'DELETE'; path: string; body?: unknown },
   ) => {
     const workspace = getWorkspaceByNameOrId(ctx.workspaceId ?? workspaceId)
     if (!workspace) return { success: false, error: 'Workspace not found' }
@@ -284,13 +283,13 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
       if (!baseUrl) return { success: false, error: 'Could not resolve OpenConnector runtime URL' }
 
       let body: string | undefined
-      if (request.method === 'PUT') {
+      if (request.method === 'PUT' || request.method === 'POST') {
         if (!request.body || typeof request.body !== 'object' || Array.isArray(request.body)) {
-          return { success: false, error: 'OpenConnector connection body must be an object' }
+          return { success: false, error: 'OpenConnector administration body must be an object' }
         }
         body = JSON.stringify(request.body)
         if (Buffer.byteLength(body, 'utf8') > OPENCONNECTOR_MUTATION_MAX_BODY_BYTES) {
-          return { success: false, error: 'OpenConnector connection body is too large' }
+          return { success: false, error: 'OpenConnector administration body is too large' }
         }
       }
 
@@ -448,17 +447,20 @@ function isAllowedOpenConnectorRuntimePath(path: string): boolean {
   return false
 }
 
-function isAllowedOpenConnectorRuntimeMutation(method: unknown, path: unknown): boolean {
-  if (method !== 'PUT' && method !== 'DELETE') return false
+export function isAllowedOpenConnectorRuntimeMutation(method: unknown, path: unknown): boolean {
   if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) return false
   let parsed: URL
   try {
+    if (decodeURIComponent(path).split('/').includes('..')) return false
     parsed = new URL(path, 'http://openconnector.local')
   } catch {
     return false
   }
   if (parsed.origin !== 'http://openconnector.local' || parsed.search || parsed.hash) return false
-  return /^\/api\/connections\/[a-z0-9_-]+$/.test(parsed.pathname)
+
+  if ((method === 'PUT' || method === 'DELETE') && /^\/api\/connections\/[a-z0-9_-]+$/.test(parsed.pathname)) return true
+  if ((method === 'PUT' || method === 'DELETE') && /^\/api\/oauth\/configs\/[a-z0-9_-]+$/.test(parsed.pathname)) return true
+  return method === 'POST' && parsed.pathname === '/api/oauth/authorizations'
 }
 
 function resolveOpenConnectorRuntimeBaseUrl(source: LoadedSource): string | null {

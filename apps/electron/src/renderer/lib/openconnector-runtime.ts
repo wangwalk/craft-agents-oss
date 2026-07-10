@@ -5,6 +5,7 @@ import {
   type OpenConnectorAdminSnapshot,
   type OpenConnectorAuthSession,
   type OpenConnectorConnectionRecord,
+  type OpenConnectorCredentialField,
   type OpenConnectorOAuthConfig,
   type OpenConnectorProviderDefinition,
   type OpenConnectorProviderSummary,
@@ -242,7 +243,7 @@ export async function openConnectorGet<T>(
 
 export async function openConnectorRequest<T>(
   gatewaySource: LoadedSource,
-  request: { method: 'PUT' | 'DELETE'; path: string; body?: unknown },
+  request: { method: 'POST' | 'PUT' | 'DELETE'; path: string; body?: unknown },
 ): Promise<T> {
   if (typeof window.electronAPI.requestOpenConnectorRuntimeJson !== 'function') {
     throw new OpenConnectorApiError(
@@ -269,7 +270,7 @@ export async function openConnectorRequest<T>(
     throw error
   }
   if (!result.success) {
-    throw new OpenConnectorApiError(result.status ?? 0, result.error ?? 'OpenConnector connection request failed')
+    throw new OpenConnectorApiError(result.status ?? 0, result.error ?? 'OpenConnector administration request failed')
   }
   return result.data as T
 }
@@ -320,7 +321,7 @@ export function resolveOpenConnectorProviderConnectionStatus(
   return {
     noSetupRequired,
     connected: connection != null,
-    oauthClientRequired: providerHasOAuth(provider) && !oauthClientConfigured(provider.service, oauthConfigs),
+    oauthClientRequired: providerHasOAuth(provider) && !providerHasCredentialAuth(provider) && !oauthClientConfigured(provider.service, oauthConfigs),
     connection,
   }
 }
@@ -348,8 +349,23 @@ function providerHasOAuth(provider: OpenConnectorProviderSummary): boolean {
   return provider.auth.some((auth) => auth.type === 'oauth2') || provider.authTypes.includes('oauth2')
 }
 
+function providerHasCredentialAuth(provider: OpenConnectorProviderSummary): boolean {
+  return provider.auth.some((auth) => auth.type === 'api_key' || auth.type === 'custom_credential')
+    || provider.authTypes.some((authType) => authType === 'api_key' || authType === 'custom_credential')
+}
+
 function oauthClientConfigured(service: string, oauthConfigs: OpenConnectorOAuthConfig[]): boolean {
   return oauthConfigs.some((config) => config.service === service && config.configured)
+}
+
+export function initialOpenConnectorConnectionValues(
+  fields: OpenConnectorCredentialField[],
+  connection: OpenConnectorConnectionRecord | undefined,
+): Record<string, string> {
+  return Object.fromEntries(fields.map((field) => {
+    const value = field.secret ? '' : connection?.metadata?.[field.key]
+    return [field.key, typeof value === 'string' ? value : field.defaultValue ?? '']
+  }))
 }
 
 export function formatOpenConnectorDate(value: string | undefined): string {
