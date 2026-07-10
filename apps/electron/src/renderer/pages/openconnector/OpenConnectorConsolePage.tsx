@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Activity, AlertCircle, ArrowUpRight, BookOpen, CheckCircle2, Copy, KeyRound, Loader2, PlayCircle, RefreshCw, Search, ShieldAlert, TerminalSquare } from 'lucide-react'
+import { AlertCircle, ArrowUpRight, BookOpen, CheckCircle2, Copy, KeyRound, Loader2, RefreshCw, Search, ShieldAlert, Trash2, TerminalSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,6 +14,7 @@ import {
   openConnectorRequest,
   formatOpenConnectorDate,
   formatOpenConnectorDuration,
+  initialOpenConnectorConnectionValues,
   resolveOpenConnectorProviderConnectionStatus,
   type OpenConnectorActionDefinition,
   type OpenConnectorActionSummary,
@@ -21,6 +22,7 @@ import {
   type OpenConnectorAuthDefinition,
   type OpenConnectorConnectionRecord,
   type OpenConnectorCredentialField,
+  type OpenConnectorOAuthConfig,
   type OpenConnectorProviderSummary,
   type OpenConnectorRunLog,
   type OpenConnectorRuntimeTokenSummary,
@@ -92,7 +94,7 @@ export function OpenConnectorConsolePage({ section, details }: OpenConnectorCons
         ) : (
           <>
             {section === 'overview' ? <OverviewSection data={data} summary={summary} healthOk={runtime.healthOk} baseUrl={externalBaseUrl} onOpen={openRuntimeUrl} /> : null}
-            {section === 'providers' ? <ProvidersSection data={data} selectedService={details?.type === 'provider' ? details.service : null} baseUrl={externalBaseUrl} gatewaySource={runtime.gatewaySource} onRefresh={runtime.refresh} /> : null}
+            {section === 'providers' ? <ProvidersSection data={data} selectedService={details?.type === 'provider' ? details.service : null} gatewaySource={runtime.gatewaySource} onRefresh={runtime.refresh} /> : null}
             {section === 'actions' ? <ActionsSection data={data} selectedActionId={details?.type === 'action' ? details.actionId : null} baseUrl={externalBaseUrl} gatewaySource={runtime.gatewaySource} /> : null}
             {section === 'runs' ? <RunsSection runs={data.runs} /> : null}
             {section === 'api-keys' ? <ApiKeysSection tokens={data.runtimeTokens} baseUrl={externalBaseUrl} /> : null}
@@ -214,13 +216,11 @@ const PROVIDER_PAGE_SIZE = 60
 function ProvidersSection({
   data,
   selectedService,
-  baseUrl,
   gatewaySource,
   onRefresh,
 }: {
   data: OpenConnectorAppData
   selectedService: string | null
-  baseUrl: string | null
   gatewaySource: LoadedSource | null
   onRefresh: () => Promise<void>
 }) {
@@ -265,7 +265,7 @@ function ProvidersSection({
   }, [category, query, sort, statusFilter])
 
   if (selected) {
-    return <ProviderDetail provider={selected} data={data} baseUrl={baseUrl} gatewaySource={gatewaySource} onRefresh={onRefresh} />
+    return <ProviderDetail provider={selected} data={data} gatewaySource={gatewaySource} onRefresh={onRefresh} />
   }
 
   const visibleProviders = providers.slice(0, visibleCount)
@@ -366,56 +366,111 @@ function ProviderFilterChip({ active, onClick, children }: { active: boolean; on
 function ProviderDetail({
   provider,
   data,
-  baseUrl,
   gatewaySource,
   onRefresh,
 }: {
   provider: OpenConnectorProviderSummary
   data: OpenConnectorAppData
-  baseUrl: string | null
   gatewaySource: LoadedSource | null
   onRefresh: () => Promise<void>
 }) {
   const status = resolveOpenConnectorProviderConnectionStatus(provider, data.connections, data.oauthConfigs)
   const oauthConfig = data.oauthConfigs.find((config) => config.service === provider.service)
+  const credentialAuth = provider.auth.find((candidate): candidate is SupportedConnectionAuth => (
+    candidate.type === 'api_key' || candidate.type === 'custom_credential'
+  ))
+  const oauthAuth = provider.auth.find((candidate): candidate is SupportedOAuthAuth => candidate.type === 'oauth2')
   const relatedActions = provider.actions.slice().sort((a, b) => a.id.localeCompare(b.id))
-  const askPrompt = `Use OpenConnector provider \`${provider.service}\`. Inspect its available actions, connection status, and suggest useful workflows for this Craft Agent workspace.`
+  const [editingCredentials, setEditingCredentials] = React.useState(false)
+  const [disconnecting, setDisconnecting] = React.useState(false)
+
+  React.useEffect(() => setEditingCredentials(false), [provider.service, status.connected])
+
+  const disconnect = async () => {
+    if (!gatewaySource || !window.confirm(`Disconnect ${provider.displayName}?`)) return
+    setDisconnecting(true)
+    try {
+      await openConnectorRequest(gatewaySource, {
+        method: 'DELETE',
+        path: `/api/connections/${encodeURIComponent(provider.service)}`,
+      })
+      await onRefresh()
+      toast.success(`${provider.displayName} disconnected`)
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setDisconnecting(false)
+    }
+  }
+
+  const connectionLabel = providerConnectionLabel(status.connection)
+  const nextStep = status.connected
+    ? connectionLabel ? `Connected to ${connectionLabel}.` : 'Connected and ready to use.'
+    : status.noSetupRequired
+      ? 'Ready to use. No connection setup is required.'
+      : oauthConfig?.configured
+        ? 'Authorize your account to start using these actions.'
+        : 'Connect an account to start using these actions.'
 
   return (
     <div className="space-y-4">
       <Button variant="ghost" size="sm" onClick={() => navigate(routes.view.openConnector({ section: 'providers' }))}>← Providers</Button>
-      <SectionCard
-        title={provider.displayName}
-        action={<ProviderStatusBadge status={status} />}
-      >
-        <div className="space-y-4">
-          <div className="flex items-start gap-4">
-            <ProviderIcon provider={provider} size="lg" />
-            <div className="min-w-0 flex-1 space-y-2 text-sm">
-              <div className="text-muted-foreground">Service: <span className="font-mono text-foreground">{provider.service}</span></div>
-              <div className="text-muted-foreground">Auth: <span className="text-foreground">{provider.authTypes.join(', ') || 'no_auth'}</span></div>
-              <div className="text-muted-foreground">Connection: <span className="text-foreground">{status.connection?.connectionName ?? (status.noSetupRequired ? 'No setup required' : 'Not connected')}</span></div>
-              {oauthConfig ? <div className="text-muted-foreground">OAuth client: <span className="text-foreground">{oauthConfig.configured ? 'configured' : 'not configured'}</span></div> : null}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => navigate(routes.action.newSession({ input: askPrompt }))}>
-              <PlayCircle className="h-4 w-4" />
-              Ask Agent
-            </Button>
-            {baseUrl ? <Button variant="outline" size="sm" onClick={() => void window.electronAPI.openUrl(`${baseUrl}/providers/${provider.service}`)}>Open in Console</Button> : null}
-            {provider.homepageUrl ? <Button variant="outline" size="sm" onClick={() => void window.electronAPI.openUrl(provider.homepageUrl!)}>Homepage</Button> : null}
-          </div>
+      <SectionCard title={provider.displayName} action={<ProviderStatusBadge status={status} />}>
+        <div className="flex items-center gap-4">
+          <ProviderIcon provider={provider} size="lg" />
+          <p className="text-sm text-muted-foreground">{nextStep}</p>
         </div>
       </SectionCard>
 
-      {gatewaySource && !status.noSetupRequired ? (
-        <ProviderConnectionForm
-          provider={provider}
-          connection={status.connection}
-          gatewaySource={gatewaySource}
-          onSaved={onRefresh}
-        />
+      {status.noSetupRequired ? (
+        <ConnectionReadyCard />
+      ) : status.connected && status.connection ? (
+        editingCredentials && credentialAuth && gatewaySource ? (
+          <ProviderConnectionForm
+            provider={provider}
+            auth={credentialAuth}
+            connection={status.connection}
+            gatewaySource={gatewaySource}
+            onSaved={onRefresh}
+            onCancel={() => setEditingCredentials(false)}
+          />
+        ) : (
+          <ConnectedProviderCard
+            connection={status.connection}
+            disconnecting={disconnecting}
+            onEdit={credentialAuth ? () => setEditingCredentials(true) : undefined}
+            onDisconnect={() => void disconnect()}
+          />
+        )
+      ) : gatewaySource ? (
+        <>
+          {oauthAuth && oauthConfig?.configured ? (
+            <OAuthConnectionCard
+              provider={provider}
+              gatewaySource={gatewaySource}
+              connected={status.connected}
+              onRefresh={onRefresh}
+            />
+          ) : credentialAuth ? (
+            <ProviderConnectionForm
+              provider={provider}
+              auth={credentialAuth}
+              gatewaySource={gatewaySource}
+              onSaved={onRefresh}
+            />
+          ) : null}
+          {oauthAuth && !oauthConfig?.configured ? (
+            <OAuthClientSetup
+              provider={provider}
+              auth={oauthAuth}
+              oauthConfig={oauthConfig}
+              gatewaySource={gatewaySource}
+              defaultExpanded={!credentialAuth}
+              onSaved={onRefresh}
+            />
+          ) : null}
+          {!credentialAuth && !oauthAuth ? <MutedEmpty text="This provider does not expose a supported connection method yet." /> : null}
+        </>
       ) : null}
 
       <SectionCard title={`Actions (${relatedActions.length})`}>
@@ -426,44 +481,87 @@ function ProviderDetail({
 }
 
 type SupportedConnectionAuth = Extract<OpenConnectorAuthDefinition, { type: 'api_key' | 'custom_credential' }>
+type SupportedOAuthAuth = Extract<OpenConnectorAuthDefinition, { type: 'oauth2' }>
+
+function ConnectionReadyCard() {
+  return (
+    <SectionCard title="Ready">
+      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+        <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+        These actions are available without credentials.
+      </div>
+    </SectionCard>
+  )
+}
+
+function ConnectedProviderCard({
+  connection,
+  disconnecting,
+  onEdit,
+  onDisconnect,
+}: {
+  connection: OpenConnectorConnectionRecord
+  disconnecting: boolean
+  onEdit?: () => void
+  onDisconnect: () => void
+}) {
+  const label = providerConnectionLabel(connection)
+  return (
+    <SectionCard title="Connected" action={<CheckCircle2 className="h-5 w-5 text-emerald-500" />}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium">{label ?? 'Ready to use'}</div>
+          <div className="mt-1 text-xs text-muted-foreground">Credentials are configured in OpenConnector.</div>
+        </div>
+        <div className="flex gap-2">
+          {onEdit ? <Button variant="outline" size="sm" onClick={onEdit}>Edit credentials</Button> : null}
+          <Button variant="ghost" size="sm" disabled={disconnecting} onClick={onDisconnect}>
+            {disconnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            Disconnect
+          </Button>
+        </div>
+      </div>
+    </SectionCard>
+  )
+}
+
+function providerConnectionLabel(connection: OpenConnectorConnectionRecord | undefined): string | null {
+  const displayName = connection?.profile?.displayName
+  if (typeof displayName === 'string' && displayName.trim()) return displayName
+  const accountId = connection?.profile?.accountId
+  if (typeof accountId === 'string' && accountId.trim()) return accountId
+  if (connection?.connectionName && connection.connectionName !== 'default') return connection.connectionName
+  return null
+}
 
 function ProviderConnectionForm({
   provider,
+  auth,
   connection,
   gatewaySource,
   onSaved,
+  onCancel,
 }: {
   provider: OpenConnectorProviderSummary
+  auth: SupportedConnectionAuth
   connection?: OpenConnectorConnectionRecord
   gatewaySource: LoadedSource
   onSaved: () => Promise<void>
+  onCancel?: () => void
 }) {
-  const auth = provider.auth.find((candidate): candidate is SupportedConnectionAuth => (
-    candidate.type === 'api_key' || candidate.type === 'custom_credential'
-  ))
   const fields = React.useMemo(() => connectionFields(auth), [auth])
-  const [connectionName, setConnectionName] = React.useState(connection?.connectionName ?? 'default')
-  const [values, setValues] = React.useState<Record<string, string>>(() => initialConnectionValues(fields, connection))
+  const [values, setValues] = React.useState<Record<string, string>>(() => initialOpenConnectorConnectionValues(fields, connection))
   const [saving, setSaving] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
   React.useEffect(() => {
-    setConnectionName(connection?.connectionName ?? 'default')
-    setValues(initialConnectionValues(fields, connection))
+    setValues(initialOpenConnectorConnectionValues(fields, connection))
     setError(null)
   }, [connection, fields, provider.service])
-
-  if (!auth) return null
 
   const saveConnection = async (event: React.FormEvent) => {
     event.preventDefault()
     setError(null)
-
-    const normalizedName = connectionName.trim() || 'default'
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(normalizedName)) {
-      setError('Connection name must use 1–64 letters, numbers, underscores, or hyphens.')
-      return
-    }
 
     const missing = fields.find((field) => field.required && !(values[field.key] ?? '').trim())
     if (missing) {
@@ -490,16 +588,13 @@ function ProviderConnectionForm({
         path: `/api/connections/${encodeURIComponent(provider.service)}`,
         body: {
           authType: auth.type,
-          connectionName: normalizedName,
+          connectionName: connection?.connectionName ?? 'default',
           values: resolvedValues,
         },
       })
-      setValues((current) => Object.fromEntries(fields.map((field) => [
-        field.key,
-        field.secret ? '' : current[field.key] ?? '',
-      ])))
       await onSaved()
-      toast.success(`${provider.displayName} connection saved`)
+      onCancel?.()
+      toast.success(`${provider.displayName} connected`)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -508,22 +603,10 @@ function ProviderConnectionForm({
   }
 
   return (
-    <SectionCard title="Connection setup">
+    <SectionCard title={connection ? 'Edit credentials' : 'Connect'}>
       <form className="space-y-4" onSubmit={(event) => void saveConnection(event)}>
+        {connection ? <p className="text-xs text-muted-foreground">Re-enter secret fields to replace this connection.</p> : null}
         <div className="grid gap-4 md:grid-cols-2">
-          <CredentialInput
-            field={{
-              key: 'connectionName',
-              label: 'Connection name',
-              inputType: 'text',
-              required: true,
-              secret: false,
-              placeholder: 'default',
-              description: 'Use a stable alias such as default, production, or dollify.',
-            }}
-            value={connectionName}
-            onChange={setConnectionName}
-          />
           {fields.map((field) => (
             <CredentialInput
               key={field.key}
@@ -533,19 +616,174 @@ function ProviderConnectionForm({
             />
           ))}
         </div>
-        {auth.type === 'api_key' && auth.description ? (
-          <p className="text-xs text-muted-foreground">{auth.description}</p>
-        ) : null}
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex items-center gap-2">
           <Button type="submit" size="sm" disabled={saving}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
-            {connection ? 'Update connection' : 'Save connection'}
+            {connection ? 'Save changes' : 'Connect'}
           </Button>
-          <span className="text-xs text-muted-foreground">
-            Credentials are sent directly to the workspace OpenConnector runtime and are never stored by Craft.
-          </span>
+          {onCancel ? <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button> : null}
         </div>
+      </form>
+    </SectionCard>
+  )
+}
+
+function OAuthConnectionCard({
+  provider,
+  gatewaySource,
+  connected,
+  onRefresh,
+}: {
+  provider: OpenConnectorProviderSummary
+  gatewaySource: LoadedSource
+  connected: boolean
+  onRefresh: () => Promise<void>
+}) {
+  const [authorizing, setAuthorizing] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (!authorizing) return
+    const interval = window.setInterval(() => void onRefresh(), 2_000)
+    const timeout = window.setTimeout(() => setAuthorizing(false), 120_000)
+    return () => {
+      window.clearInterval(interval)
+      window.clearTimeout(timeout)
+    }
+  }, [authorizing, onRefresh])
+
+  React.useEffect(() => {
+    if (authorizing && connected) {
+      setAuthorizing(false)
+      toast.success(`${provider.displayName} connected`)
+    }
+  }, [authorizing, connected, provider.displayName])
+
+  const startAuthorization = async () => {
+    setError(null)
+    setAuthorizing(true)
+    try {
+      const authorization = await openConnectorRequest<{ authorizationUrl: string }>(gatewaySource, {
+        method: 'POST',
+        path: '/api/oauth/authorizations',
+        body: { service: provider.service, connectionName: 'default' },
+      })
+      await window.electronAPI.openUrl(authorization.authorizationUrl)
+    } catch (caught) {
+      setAuthorizing(false)
+      setError(caught instanceof Error ? caught.message : String(caught))
+    }
+  }
+
+  return (
+    <SectionCard title="Connect">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">Authorize your account in the provider window.</p>
+        <Button size="sm" disabled={authorizing} onClick={() => void startAuthorization()}>
+          {authorizing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {authorizing ? 'Waiting for authorization…' : 'Connect with OAuth'}
+        </Button>
+      </div>
+      {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
+    </SectionCard>
+  )
+}
+
+function OAuthClientSetup({
+  provider,
+  auth,
+  oauthConfig,
+  gatewaySource,
+  defaultExpanded,
+  onSaved,
+}: {
+  provider: OpenConnectorProviderSummary
+  auth: SupportedOAuthAuth
+  oauthConfig: OpenConnectorOAuthConfig | undefined
+  gatewaySource: LoadedSource
+  defaultExpanded: boolean
+  onSaved: () => Promise<void>
+}) {
+  const fields = auth.clientConfigFields ?? []
+  const needsClientSecret = auth.tokenEndpointAuthMethod !== 'none' && auth.tokenRequestFields?.clientSecret !== false
+  const [expanded, setExpanded] = React.useState(defaultExpanded)
+  const [clientId, setClientId] = React.useState(oauthConfig?.clientId ?? '')
+  const [clientSecret, setClientSecret] = React.useState('')
+  const [values, setValues] = React.useState<Record<string, string>>(() => Object.fromEntries(fields.map((field) => [field.key, field.defaultValue ?? ''])))
+  const [saving, setSaving] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  const saveConfig = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setError(null)
+    if (!clientId.trim()) {
+      setError('Client ID is required.')
+      return
+    }
+    if (needsClientSecret && !clientSecret.trim()) {
+      setError('Client secret is required.')
+      return
+    }
+    const missing = fields.find((field) => field.required && !(values[field.key] ?? '').trim())
+    if (missing) {
+      setError(`${missing.label} is required.`)
+      return
+    }
+
+    const extra: Record<string, string> = {}
+    const secretExtra: Record<string, string> = {}
+    for (const field of fields) {
+      const value = (values[field.key] ?? '').trim()
+      if (!value) continue
+      const target = field.location === 'secretExtra' || field.secret ? secretExtra : extra
+      target[field.key] = value
+    }
+
+    setSaving(true)
+    try {
+      await openConnectorRequest(gatewaySource, {
+        method: 'PUT',
+        path: `/api/oauth/configs/${encodeURIComponent(provider.service)}`,
+        body: {
+          clientId: clientId.trim(),
+          ...(clientSecret.trim() ? { clientSecret: clientSecret.trim() } : {}),
+          ...(Object.keys(extra).length > 0 ? { extra } : {}),
+          ...(Object.keys(secretExtra).length > 0 ? { secretExtra } : {}),
+        },
+      })
+      await onSaved()
+      toast.success(`${provider.displayName} OAuth app configured`)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!expanded) {
+    return (
+      <button type="button" onClick={() => setExpanded(true)} className="w-full rounded-xl border border-dashed border-border/70 px-4 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-foreground/[0.025]">
+        Prefer OAuth? Configure an OAuth app
+      </button>
+    )
+  }
+
+  return (
+    <SectionCard title="OAuth app setup" action={!defaultExpanded ? <Button variant="ghost" size="sm" onClick={() => setExpanded(false)}>Cancel</Button> : undefined}>
+      <form className="space-y-4" onSubmit={(event) => void saveConfig(event)}>
+        <p className="text-sm text-muted-foreground">Add an OAuth app once, then connect accounts without copying access tokens.</p>
+        {oauthConfig?.expectedRedirectUri ? <p className="rounded-lg bg-foreground/[0.04] px-3 py-2 font-mono text-xs">Redirect URI: {oauthConfig.expectedRedirectUri}</p> : null}
+        <div className="grid gap-4 md:grid-cols-2">
+          <CredentialInput field={{ key: 'clientId', label: 'Client ID', inputType: 'text', required: true, secret: false }} value={clientId} onChange={setClientId} />
+          {needsClientSecret ? <CredentialInput field={{ key: 'clientSecret', label: 'Client secret', inputType: 'password', required: true, secret: true }} value={clientSecret} onChange={setClientSecret} /> : null}
+          {fields.map((field) => <CredentialInput key={field.key} field={field} value={values[field.key] ?? ''} onChange={(value) => setValues((current) => ({ ...current, [field.key]: value }))} />)}
+        </div>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <Button type="submit" size="sm" disabled={saving}>
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          Save OAuth app
+        </Button>
       </form>
     </SectionCard>
   )
@@ -606,16 +844,6 @@ function connectionFields(auth: SupportedConnectionAuth | undefined): OpenConnec
     },
     ...(auth.extraFields ?? []),
   ]
-}
-
-function initialConnectionValues(
-  fields: OpenConnectorCredentialField[],
-  connection: OpenConnectorConnectionRecord | undefined,
-): Record<string, string> {
-  return Object.fromEntries(fields.map((field) => {
-    const value = field.secret ? '' : connection?.metadata[field.key]
-    return [field.key, typeof value === 'string' ? value : '']
-  }))
 }
 
 function ActionsSection({ data, selectedActionId, baseUrl, gatewaySource }: { data: OpenConnectorAppData; selectedActionId: string | null; baseUrl: string | null; gatewaySource: LoadedSource | null }) {
@@ -717,7 +945,6 @@ function ActionDetail({ action, baseUrl, gatewaySource }: { action: OpenConnecto
     return () => { active = false }
   }, [action.id, gatewaySource])
 
-  const askPrompt = `Use OpenConnector action \`${action.id}\`. First inspect its guide and input schema, then ask me for any missing inputs before execution.`
   const guideUrl = baseUrl ? `${baseUrl}/api/actions/${action.id}/agent.md` : null
   return (
     <div className="space-y-4">
@@ -730,10 +957,6 @@ function ActionDetail({ action, baseUrl, gatewaySource }: { action: OpenConnecto
             {action.requiredScopes.map((scope) => <Badge key={scope} variant="secondary">{scope}</Badge>)}
           </div>
           <div className="flex flex-wrap gap-2 pt-1">
-            <Button size="sm" onClick={() => navigate(routes.action.newSession({ input: askPrompt }))}>
-              <PlayCircle className="h-4 w-4" />
-              Ask Agent
-            </Button>
             {guideUrl ? <Button variant="outline" size="sm" onClick={() => void copyText(guideUrl, 'Action guide URL copied')}> <Copy className="h-4 w-4" /> Copy guide URL</Button> : null}
             {guideUrl ? <Button variant="outline" size="sm" onClick={() => void window.electronAPI.openUrl(guideUrl)}>Open guide</Button> : null}
           </div>
@@ -907,7 +1130,7 @@ function useProviderLogo(provider: OpenConnectorProviderSummary): string | null 
       if (!cancelled) setLogoUrl(resolved)
     })
     return () => { cancelled = true }
-  }, [cacheKey, provider.homepageUrl, provider.iconUrl, provider.service])
+  }, [cacheKey, provider])
 
   return logoUrl
 }

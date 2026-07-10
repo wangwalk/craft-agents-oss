@@ -22,6 +22,8 @@ export type OpenConnectorAuthDefinition =
       type: 'oauth2';
       scopes: string[];
       clientConfigFields?: OpenConnectorCredentialField[];
+      tokenEndpointAuthMethod?: string;
+      tokenRequestFields?: { clientSecret?: boolean };
     };
 
 export interface OpenConnectorCredentialField {
@@ -32,6 +34,8 @@ export interface OpenConnectorCredentialField {
   secret: boolean;
   placeholder?: string;
   description?: string;
+  defaultValue?: string;
+  location?: 'extra' | 'secretExtra';
 }
 
 export type OpenConnectorJsonSchema = Record<string, unknown>;
@@ -79,7 +83,8 @@ export interface OpenConnectorConnectionRecord {
   virtual?: boolean;
   default?: boolean;
   profile?: Record<string, unknown> | null;
-  metadata: Record<string, unknown>;
+  /** Optional for compatibility with connection records from older runtimes. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface OpenConnectorOAuthConfig {
