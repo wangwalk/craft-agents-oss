@@ -19,6 +19,7 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.permissions.GET_DEFAULTS,
   RPC_CHANNELS.sources.GET_MCP_TOOLS,
   RPC_CHANNELS.sources.GET_OPENCONNECTOR_RUNTIME_JSON,
+  RPC_CHANNELS.sources.REQUEST_OPENCONNECTOR_RUNTIME_JSON,
   RPC_CHANNELS.sources.GET_OPENCONNECTOR_RUNTIME_SNAPSHOT,
 ] as const
 
@@ -255,6 +256,72 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
     }
   })
 
+  // Mutate OpenConnector provider connections through the workspace/backend side.
+  // Credentials stay inside the renderer -> authenticated RPC -> localhost
+  // request path and are never logged or persisted by Craft. Keep the proxy
+  // restricted to connection endpoints so it cannot become an arbitrary write
+  // tunnel into the OpenConnector administration API.
+  server.handle(RPC_CHANNELS.sources.REQUEST_OPENCONNECTOR_RUNTIME_JSON, async (
+    ctx,
+    workspaceId: string,
+    sourceSlug: string,
+    request: { method: 'PUT' | 'DELETE'; path: string; body?: unknown },
+  ) => {
+    const workspace = getWorkspaceByNameOrId(ctx.workspaceId ?? workspaceId)
+    if (!workspace) return { success: false, error: 'Workspace not found' }
+    if (!request || !isAllowedOpenConnectorRuntimeMutation(request.method, request.path)) {
+      return { success: false, error: 'OpenConnector runtime mutation is not allowed' }
+    }
+
+    try {
+      const sources = await loadWorkspaceSources(workspace.rootPath)
+      const source = sources.find(s => s.config.slug === sourceSlug)
+      if (!source) return { success: false, error: 'Source not found' }
+      if (!isOpenConnectorGatewaySource(source.config)) return { success: false, error: 'Source is not an OpenConnector gateway' }
+      if (!source.config.mcp?.url) return { success: false, error: 'OpenConnector gateway MCP URL is missing' }
+
+      const baseUrl = resolveOpenConnectorRuntimeBaseUrl(source)
+      if (!baseUrl) return { success: false, error: 'Could not resolve OpenConnector runtime URL' }
+
+      let body: string | undefined
+      if (request.method === 'PUT') {
+        if (!request.body || typeof request.body !== 'object' || Array.isArray(request.body)) {
+          return { success: false, error: 'OpenConnector connection body must be an object' }
+        }
+        body = JSON.stringify(request.body)
+        if (Buffer.byteLength(body, 'utf8') > OPENCONNECTOR_MUTATION_MAX_BODY_BYTES) {
+          return { success: false, error: 'OpenConnector connection body is too large' }
+        }
+      }
+
+      const headers = await openConnectorRuntimeHeaders(source)
+      if (body !== undefined) headers.set('content-type', 'application/json')
+      const response = await fetch(new URL(request.path, baseUrl), {
+        method: request.method,
+        headers,
+        body,
+        signal: AbortSignal.timeout(OPENCONNECTOR_MUTATION_TIMEOUT_MS),
+      })
+      const data = await response.json().catch(async () => ({ text: await response.text().catch(() => '') }))
+      if (!response.ok) {
+        return {
+          success: false,
+          status: response.status,
+          error: openConnectorErrorMessage(data) ?? `OpenConnector connection request failed with ${response.status}`,
+          data,
+        }
+      }
+      return { success: true, status: response.status, data }
+    } catch (error) {
+      const timedOut = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')
+      const message = timedOut
+        ? `OpenConnector connection request timed out after ${OPENCONNECTOR_MUTATION_TIMEOUT_MS}ms`
+        : error instanceof Error ? error.message : 'OpenConnector connection request failed'
+      log.error('OpenConnector connection request failed')
+      return { success: false, status: timedOut ? 504 : undefined, error: message }
+    }
+  })
+
   // Get MCP tools for a source with permission status
   server.handle(RPC_CHANNELS.sources.GET_MCP_TOOLS, async (_ctx, workspaceId: string, sourceSlug: string) => {
     const workspace = getWorkspaceByNameOrId(workspaceId)
@@ -350,6 +417,8 @@ export function registerSourcesHandlers(server: RpcServer, deps: HandlerDeps): v
 }
 
 const OPENCONNECTOR_SNAPSHOT_TIMEOUT_MS = 10_000
+const OPENCONNECTOR_MUTATION_TIMEOUT_MS = 15_000
+const OPENCONNECTOR_MUTATION_MAX_BODY_BYTES = 64 * 1024
 
 const OPENCONNECTOR_RUNTIME_ALLOWED_PATHS = new Set([
   '/api/auth/session',
@@ -377,6 +446,19 @@ function isAllowedOpenConnectorRuntimePath(path: string): boolean {
   if (/^\/api\/actions\/[^/]+$/.test(parsed.pathname)) return true
   if (/^\/api\/actions\/[^/]+\/agent\.md$/.test(parsed.pathname)) return true
   return false
+}
+
+function isAllowedOpenConnectorRuntimeMutation(method: unknown, path: unknown): boolean {
+  if (method !== 'PUT' && method !== 'DELETE') return false
+  if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) return false
+  let parsed: URL
+  try {
+    parsed = new URL(path, 'http://openconnector.local')
+  } catch {
+    return false
+  }
+  if (parsed.origin !== 'http://openconnector.local' || parsed.search || parsed.hash) return false
+  return /^\/api\/connections\/[a-z0-9_-]+$/.test(parsed.pathname)
 }
 
 function resolveOpenConnectorRuntimeBaseUrl(source: LoadedSource): string | null {

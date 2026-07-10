@@ -229,6 +229,7 @@ export const CHANNEL_MAP = {
   onDefaultPermissionsChanged: listener(RPC_CHANNELS.permissions.DEFAULTS_CHANGED),
   getMcpTools: invoke(RPC_CHANNELS.sources.GET_MCP_TOOLS),
   getOpenConnectorRuntimeJson: invoke(RPC_CHANNELS.sources.GET_OPENCONNECTOR_RUNTIME_JSON),
+  requestOpenConnectorRuntimeJson: invoke(RPC_CHANNELS.sources.REQUEST_OPENCONNECTOR_RUNTIME_JSON),
   getOpenConnectorRuntimeSnapshot: invoke(RPC_CHANNELS.sources.GET_OPENCONNECTOR_RUNTIME_SNAPSHOT),
 
   // Session content search

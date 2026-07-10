@@ -240,6 +240,40 @@ export async function openConnectorGet<T>(
   return result.data as T
 }
 
+export async function openConnectorRequest<T>(
+  gatewaySource: LoadedSource,
+  request: { method: 'PUT' | 'DELETE'; path: string; body?: unknown },
+): Promise<T> {
+  if (typeof window.electronAPI.requestOpenConnectorRuntimeJson !== 'function') {
+    throw new OpenConnectorApiError(
+      0,
+      'Craft backend does not support OpenConnector connection requests yet. Restart or update the app and workspace server.',
+    )
+  }
+
+  let result: { success: boolean; data?: unknown; status?: number; error?: string }
+  try {
+    result = await window.electronAPI.requestOpenConnectorRuntimeJson(
+      gatewaySource.workspaceId,
+      gatewaySource.config.slug,
+      request,
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes('No handler for: sources:requestOpenConnectorRuntimeJson')) {
+      throw new OpenConnectorApiError(
+        0,
+        'Craft workspace server does not support OpenConnector connection requests yet. Restart or update it first.',
+      )
+    }
+    throw error
+  }
+  if (!result.success) {
+    throw new OpenConnectorApiError(result.status ?? 0, result.error ?? 'OpenConnector connection request failed')
+  }
+  return result.data as T
+}
+
 async function probeOpenConnectorHealth(
   gatewaySource: LoadedSource,
   options: { adminToken?: string },

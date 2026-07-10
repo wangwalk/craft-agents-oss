@@ -273,6 +273,7 @@ const EXPECTED_CHANNELS: string[] = [
   'sources:getOpenConnectorRuntimeJson',
   'sources:getOpenConnectorRuntimeSnapshot',
   'sources:getPermissions',
+  'sources:requestOpenConnectorRuntimeJson',
   'sources:saveCredentials',
   'sources:startOAuth',
   'statuses:changed',

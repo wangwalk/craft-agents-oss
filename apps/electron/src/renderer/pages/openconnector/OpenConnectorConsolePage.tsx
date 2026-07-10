@@ -11,12 +11,16 @@ import {
   compactOpenConnectorJson,
   createOpenConnectorOverviewSummary,
   openConnectorGet,
+  openConnectorRequest,
   formatOpenConnectorDate,
   formatOpenConnectorDuration,
   resolveOpenConnectorProviderConnectionStatus,
   type OpenConnectorActionDefinition,
   type OpenConnectorActionSummary,
   type OpenConnectorAppData,
+  type OpenConnectorAuthDefinition,
+  type OpenConnectorConnectionRecord,
+  type OpenConnectorCredentialField,
   type OpenConnectorProviderSummary,
   type OpenConnectorRunLog,
   type OpenConnectorRuntimeTokenSummary,
@@ -88,7 +92,7 @@ export function OpenConnectorConsolePage({ section, details }: OpenConnectorCons
         ) : (
           <>
             {section === 'overview' ? <OverviewSection data={data} summary={summary} healthOk={runtime.healthOk} baseUrl={externalBaseUrl} onOpen={openRuntimeUrl} /> : null}
-            {section === 'providers' ? <ProvidersSection data={data} selectedService={details?.type === 'provider' ? details.service : null} baseUrl={externalBaseUrl} /> : null}
+            {section === 'providers' ? <ProvidersSection data={data} selectedService={details?.type === 'provider' ? details.service : null} baseUrl={externalBaseUrl} gatewaySource={runtime.gatewaySource} onRefresh={runtime.refresh} /> : null}
             {section === 'actions' ? <ActionsSection data={data} selectedActionId={details?.type === 'action' ? details.actionId : null} baseUrl={externalBaseUrl} gatewaySource={runtime.gatewaySource} /> : null}
             {section === 'runs' ? <RunsSection runs={data.runs} /> : null}
             {section === 'api-keys' ? <ApiKeysSection tokens={data.runtimeTokens} baseUrl={externalBaseUrl} /> : null}
@@ -168,7 +172,7 @@ function OverviewSection({
   const recentRuns = data.runs.slice(0, 6)
   return (
     <div className="space-y-5">
-      <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+      <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
@@ -207,7 +211,19 @@ type ProviderSort = 'recommended' | 'name' | 'actions'
 
 const PROVIDER_PAGE_SIZE = 60
 
-function ProvidersSection({ data, selectedService, baseUrl }: { data: OpenConnectorAppData; selectedService: string | null; baseUrl: string | null }) {
+function ProvidersSection({
+  data,
+  selectedService,
+  baseUrl,
+  gatewaySource,
+  onRefresh,
+}: {
+  data: OpenConnectorAppData
+  selectedService: string | null
+  baseUrl: string | null
+  gatewaySource: LoadedSource | null
+  onRefresh: () => Promise<void>
+}) {
   const [query, setQuery] = React.useState('')
   const [statusFilter, setStatusFilter] = React.useState<ProviderStatusFilter>('all')
   const [category, setCategory] = React.useState('all')
@@ -249,7 +265,7 @@ function ProvidersSection({ data, selectedService, baseUrl }: { data: OpenConnec
   }, [category, query, sort, statusFilter])
 
   if (selected) {
-    return <ProviderDetail provider={selected} data={data} baseUrl={baseUrl} />
+    return <ProviderDetail provider={selected} data={data} baseUrl={baseUrl} gatewaySource={gatewaySource} onRefresh={onRefresh} />
   }
 
   const visibleProviders = providers.slice(0, visibleCount)
@@ -300,7 +316,7 @@ function ProvidersSection({ data, selectedService, baseUrl }: { data: OpenConnec
               key={provider.service}
               type="button"
               onClick={() => navigate(routes.view.openConnector({ providerService: provider.service }))}
-              className="group rounded-xl border border-border/55 bg-card p-3 text-left transition-all hover:border-border hover:bg-foreground/[0.025] hover:shadow-sm"
+              className="group rounded-xl border border-border/55 bg-card p-3 text-left transition-all hover:border-border hover:bg-foreground/[0.025] hover:shadow-xs"
             >
               <div className="flex items-start gap-3">
                 <ProviderIcon provider={provider} />
@@ -347,7 +363,19 @@ function ProviderFilterChip({ active, onClick, children }: { active: boolean; on
   )
 }
 
-function ProviderDetail({ provider, data, baseUrl }: { provider: OpenConnectorProviderSummary; data: OpenConnectorAppData; baseUrl: string | null }) {
+function ProviderDetail({
+  provider,
+  data,
+  baseUrl,
+  gatewaySource,
+  onRefresh,
+}: {
+  provider: OpenConnectorProviderSummary
+  data: OpenConnectorAppData
+  baseUrl: string | null
+  gatewaySource: LoadedSource | null
+  onRefresh: () => Promise<void>
+}) {
   const status = resolveOpenConnectorProviderConnectionStatus(provider, data.connections, data.oauthConfigs)
   const oauthConfig = data.oauthConfigs.find((config) => config.service === provider.service)
   const relatedActions = provider.actions.slice().sort((a, b) => a.id.localeCompare(b.id))
@@ -381,11 +409,213 @@ function ProviderDetail({ provider, data, baseUrl }: { provider: OpenConnectorPr
         </div>
       </SectionCard>
 
+      {gatewaySource && !status.noSetupRequired ? (
+        <ProviderConnectionForm
+          provider={provider}
+          connection={status.connection}
+          gatewaySource={gatewaySource}
+          onSaved={onRefresh}
+        />
+      ) : null}
+
       <SectionCard title={`Actions (${relatedActions.length})`}>
         <ActionList actions={relatedActions} compact />
       </SectionCard>
     </div>
   )
+}
+
+type SupportedConnectionAuth = Extract<OpenConnectorAuthDefinition, { type: 'api_key' | 'custom_credential' }>
+
+function ProviderConnectionForm({
+  provider,
+  connection,
+  gatewaySource,
+  onSaved,
+}: {
+  provider: OpenConnectorProviderSummary
+  connection?: OpenConnectorConnectionRecord
+  gatewaySource: LoadedSource
+  onSaved: () => Promise<void>
+}) {
+  const auth = provider.auth.find((candidate): candidate is SupportedConnectionAuth => (
+    candidate.type === 'api_key' || candidate.type === 'custom_credential'
+  ))
+  const fields = React.useMemo(() => connectionFields(auth), [auth])
+  const [connectionName, setConnectionName] = React.useState(connection?.connectionName ?? 'default')
+  const [values, setValues] = React.useState<Record<string, string>>(() => initialConnectionValues(fields, connection))
+  const [saving, setSaving] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    setConnectionName(connection?.connectionName ?? 'default')
+    setValues(initialConnectionValues(fields, connection))
+    setError(null)
+  }, [connection, fields, provider.service])
+
+  if (!auth) return null
+
+  const saveConnection = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setError(null)
+
+    const normalizedName = connectionName.trim() || 'default'
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(normalizedName)) {
+      setError('Connection name must use 1–64 letters, numbers, underscores, or hyphens.')
+      return
+    }
+
+    const missing = fields.find((field) => field.required && !(values[field.key] ?? '').trim())
+    if (missing) {
+      setError(`${missing.label} is required.`)
+      return
+    }
+
+    let resolvedValues: Record<string, unknown>
+    try {
+      resolvedValues = Object.fromEntries(fields.flatMap((field) => {
+        const value = (values[field.key] ?? '').trim()
+        if (!value) return []
+        return [[field.key, field.inputType === 'json' ? JSON.parse(value) : value]]
+      }))
+    } catch {
+      setError('A JSON credential field is not valid JSON.')
+      return
+    }
+
+    setSaving(true)
+    try {
+      await openConnectorRequest<OpenConnectorConnectionRecord>(gatewaySource, {
+        method: 'PUT',
+        path: `/api/connections/${encodeURIComponent(provider.service)}`,
+        body: {
+          authType: auth.type,
+          connectionName: normalizedName,
+          values: resolvedValues,
+        },
+      })
+      setValues((current) => Object.fromEntries(fields.map((field) => [
+        field.key,
+        field.secret ? '' : current[field.key] ?? '',
+      ])))
+      await onSaved()
+      toast.success(`${provider.displayName} connection saved`)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <SectionCard title="Connection setup">
+      <form className="space-y-4" onSubmit={(event) => void saveConnection(event)}>
+        <div className="grid gap-4 md:grid-cols-2">
+          <CredentialInput
+            field={{
+              key: 'connectionName',
+              label: 'Connection name',
+              inputType: 'text',
+              required: true,
+              secret: false,
+              placeholder: 'default',
+              description: 'Use a stable alias such as default, production, or dollify.',
+            }}
+            value={connectionName}
+            onChange={setConnectionName}
+          />
+          {fields.map((field) => (
+            <CredentialInput
+              key={field.key}
+              field={field}
+              value={values[field.key] ?? ''}
+              onChange={(value) => setValues((current) => ({ ...current, [field.key]: value }))}
+            />
+          ))}
+        </div>
+        {auth.type === 'api_key' && auth.description ? (
+          <p className="text-xs text-muted-foreground">{auth.description}</p>
+        ) : null}
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <div className="flex items-center gap-2">
+          <Button type="submit" size="sm" disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+            {connection ? 'Update connection' : 'Save connection'}
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Credentials are sent directly to the workspace OpenConnector runtime and are never stored by Craft.
+          </span>
+        </div>
+      </form>
+    </SectionCard>
+  )
+}
+
+function CredentialInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: OpenConnectorCredentialField
+  value: string
+  onChange: (value: string) => void
+}) {
+  const inputId = `openconnector-credential-${field.key}`
+  return (
+    <div className="space-y-1.5">
+      <label htmlFor={inputId} className="text-sm font-medium">
+        {field.label}{field.required ? <span className="ml-1 text-destructive">*</span> : null}
+      </label>
+      {!field.secret && (field.inputType === 'textarea' || field.inputType === 'json') ? (
+        <textarea
+          id={inputId}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={field.placeholder}
+          autoComplete="off"
+          rows={field.inputType === 'json' ? 5 : 3}
+          className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+        />
+      ) : (
+        <Input
+          id={inputId}
+          type={field.secret || field.inputType === 'password' ? 'password' : 'text'}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={field.placeholder}
+          autoComplete="off"
+        />
+      )}
+      {field.description ? <p className="text-xs text-muted-foreground">{field.description}</p> : null}
+    </div>
+  )
+}
+
+function connectionFields(auth: SupportedConnectionAuth | undefined): OpenConnectorCredentialField[] {
+  if (!auth) return []
+  if (auth.type === 'custom_credential') return auth.fields
+  return [
+    {
+      key: 'apiKey',
+      label: auth.label ?? 'API key',
+      inputType: 'password',
+      required: true,
+      secret: true,
+      placeholder: auth.placeholder,
+      description: auth.description,
+    },
+    ...(auth.extraFields ?? []),
+  ]
+}
+
+function initialConnectionValues(
+  fields: OpenConnectorCredentialField[],
+  connection: OpenConnectorConnectionRecord | undefined,
+): Record<string, string> {
+  return Object.fromEntries(fields.map((field) => {
+    const value = field.secret ? '' : connection?.metadata[field.key]
+    return [field.key, typeof value === 'string' ? value : '']
+  }))
 }
 
 function ActionsSection({ data, selectedActionId, baseUrl, gatewaySource }: { data: OpenConnectorAppData; selectedActionId: string | null; baseUrl: string | null; gatewaySource: LoadedSource | null }) {
@@ -594,7 +824,7 @@ function DocsSection({ baseUrl, onOpen }: { baseUrl: string | null; onOpen: (pat
   return (
     <div className="grid gap-3 md:grid-cols-2">
       {items.map((item) => (
-        <button key={item.title} type="button" disabled={!baseUrl} onClick={() => onOpen(item.path)} className="rounded-2xl border border-border/60 bg-card p-4 text-left shadow-sm transition-colors hover:bg-foreground/[0.03] disabled:opacity-50">
+        <button key={item.title} type="button" disabled={!baseUrl} onClick={() => onOpen(item.path)} className="rounded-2xl border border-border/60 bg-card p-4 text-left shadow-xs transition-colors hover:bg-foreground/[0.03] disabled:opacity-50">
           <div className="flex items-center gap-2 font-semibold"><BookOpen className="h-4 w-4" />{item.title}</div>
           <p className="mt-2 text-sm text-muted-foreground">{item.description}</p>
         </button>
@@ -605,7 +835,7 @@ function DocsSection({ baseUrl, onOpen }: { baseUrl: string | null; onOpen: (pat
 
 function MetricCard({ label, value, meta }: { label: string; value: React.ReactNode; meta: string }) {
   return (
-    <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
+    <div className="rounded-2xl border border-border/60 bg-card p-4 shadow-xs">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-2 text-2xl font-semibold">{value}</div>
       <div className="mt-1 text-xs text-muted-foreground">{meta}</div>
@@ -615,7 +845,7 @@ function MetricCard({ label, value, meta }: { label: string; value: React.ReactN
 
 function SectionCard({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="rounded-2xl border border-border/60 bg-card p-4 shadow-sm">
+    <section className="rounded-2xl border border-border/60 bg-card p-4 shadow-xs">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold">{title}</h2>
         {action}
@@ -724,7 +954,7 @@ function SchemaPanel({ title, schema }: { title: string; schema: Record<string, 
 function EmptyPanel({ icon, title, description, action }: { icon: React.ReactNode; title: string; description: string; action?: React.ReactNode }) {
   return (
     <div className="flex h-full items-center justify-center">
-      <div className="max-w-md rounded-2xl border border-border/60 bg-card p-8 text-center shadow-sm">
+      <div className="max-w-md rounded-2xl border border-border/60 bg-card p-8 text-center shadow-xs">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-foreground/[0.05] text-muted-foreground">{icon}</div>
         <h2 className="text-base font-semibold">{title}</h2>
         <p className="mt-2 text-sm text-muted-foreground">{description}</p>
