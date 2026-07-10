@@ -870,13 +870,20 @@ export interface SourcesNavigationState {
 /**
  * OpenConnector top-level product navigation.
  *
- * Provider apps are gateway-backed UI items, not persisted Source configs. The
- * providerItemId currently remains `sourceSlug::openconnector::providerId` for
- * compatibility with existing source detail rendering.
+ * OpenConnector is a runtime console surface, not a persisted Source config
+ * type. The physical backing connection remains a hidden MCP source, while this
+ * state models OpenConnector sections and optional runtime entity details.
  */
+export type OpenConnectorSection = 'overview' | 'providers' | 'actions' | 'runs' | 'api-keys' | 'docs'
+
+export type OpenConnectorDetail =
+  | { type: 'provider'; service: string }
+  | { type: 'action'; actionId: string }
+
 export interface OpenConnectorNavigationState {
   navigator: 'openconnector'
-  details: { type: 'provider'; providerItemId: string } | null
+  section: OpenConnectorSection
+  details: OpenConnectorDetail | null
   rightSidebar?: RightSidebarPanel
 }
 
@@ -979,9 +986,12 @@ export const getNavigationStateKey = (state: NavigationState): string => {
   }
   if (state.navigator === 'openconnector') {
     if (state.details?.type === 'provider') {
-      return `openconnector/provider/${state.details.providerItemId}`
+      return `openconnector/providers/${state.details.service}`
     }
-    return 'openconnector'
+    if (state.details?.type === 'action') {
+      return `openconnector/actions/${state.details.actionId}`
+    }
+    return `openconnector/${state.section}`
   }
   if (state.navigator === 'skills') {
     if (state.details?.type === 'skill') {
@@ -1018,27 +1028,53 @@ export const getNavigationStateKey = (state: NavigationState): string => {
   return base
 }
 
+function legacyOpenConnectorProviderIdToService(value: string): string | null {
+  if (!value) return null
+  const decoded = decodeURIComponent(value)
+  const separator = '::openconnector::'
+  const separatorIndex = decoded.indexOf(separator)
+  if (separatorIndex === -1) return decoded
+  const service = decoded.slice(separatorIndex + separator.length)
+  return service || null
+}
+
 export const parseNavigationStateKey = (key: string): NavigationState | null => {
   // Handle sources
   if (key === 'sources') return { navigator: 'sources', details: null }
   if (key === 'sources/api') return { navigator: 'sources', filter: { kind: 'type', sourceType: 'api' }, details: null }
   if (key === 'sources/mcp') return { navigator: 'sources', filter: { kind: 'type', sourceType: 'mcp' }, details: null }
   if (key === 'sources/local') return { navigator: 'sources', filter: { kind: 'type', sourceType: 'local' }, details: null }
-  if (key === 'sources/openconnector') return { navigator: 'openconnector', details: null }
+  if (key === 'sources/openconnector') return { navigator: 'openconnector', section: 'overview', details: null }
   if (key.startsWith('sources/openconnector/source/')) {
-    const providerItemId = key.slice('sources/openconnector/source/'.length)
-    if (providerItemId) {
-      return { navigator: 'openconnector', details: { type: 'provider', providerItemId } }
+    const service = legacyOpenConnectorProviderIdToService(key.slice('sources/openconnector/source/'.length))
+    if (service) {
+      return { navigator: 'openconnector', section: 'providers', details: { type: 'provider', service } }
     }
-    return { navigator: 'openconnector', details: null }
+    return { navigator: 'openconnector', section: 'overview', details: null }
   }
-  if (key === 'openconnector') return { navigator: 'openconnector', details: null }
+  if (key === 'openconnector') return { navigator: 'openconnector', section: 'overview', details: null }
+  if (key === 'openconnector/overview') return { navigator: 'openconnector', section: 'overview', details: null }
+  if (key === 'openconnector/providers') return { navigator: 'openconnector', section: 'providers', details: null }
+  if (key.startsWith('openconnector/providers/')) {
+    const service = decodeURIComponent(key.slice('openconnector/providers/'.length))
+    if (service) return { navigator: 'openconnector', section: 'providers', details: { type: 'provider', service } }
+    return { navigator: 'openconnector', section: 'providers', details: null }
+  }
+  if (key === 'openconnector/actions') return { navigator: 'openconnector', section: 'actions', details: null }
+  if (key.startsWith('openconnector/actions/')) {
+    const actionId = decodeURIComponent(key.slice('openconnector/actions/'.length))
+    if (actionId) return { navigator: 'openconnector', section: 'actions', details: { type: 'action', actionId } }
+    return { navigator: 'openconnector', section: 'actions', details: null }
+  }
+  if (key === 'openconnector/runs') return { navigator: 'openconnector', section: 'runs', details: null }
+  if (key === 'openconnector/api-keys') return { navigator: 'openconnector', section: 'api-keys', details: null }
+  if (key === 'openconnector/docs') return { navigator: 'openconnector', section: 'docs', details: null }
   if (key.startsWith('openconnector/provider/')) {
-    const providerItemId = key.slice('openconnector/provider/'.length)
-    if (providerItemId) {
-      return { navigator: 'openconnector', details: { type: 'provider', providerItemId } }
+    const service = legacyOpenConnectorProviderIdToService(key.slice('openconnector/provider/'.length))
+    if (service) {
+      return { navigator: 'openconnector', section: 'providers', details: { type: 'provider', service } }
     }
-    return { navigator: 'openconnector', details: null }
+    return { navigator: 'openconnector', section: 'overview', details: null }
   }
   if (key.startsWith('sources/source/')) {
     const sourceSlug = key.slice(15)

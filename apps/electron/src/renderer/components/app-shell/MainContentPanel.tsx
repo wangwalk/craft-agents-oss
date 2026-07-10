@@ -43,6 +43,7 @@ import SkillInfoPage from '@/pages/SkillInfoPage'
 import { getSettingsPageComponent } from '@/pages/settings/settings-pages'
 import { AutomationInfoPage } from '../automations/AutomationInfoPage'
 import ProjectInfoPage from '@/pages/ProjectInfoPage'
+import { OpenConnectorConsolePage } from '@/pages/openconnector/OpenConnectorConsolePage'
 import { KanbanBoardContainer } from './kanban/KanbanBoardContainer'
 import type { ExecutionEntry } from '../automations/types'
 import { automationsAtom } from '@/atoms/automations'
@@ -282,23 +283,11 @@ export function MainContentPanel({
     )
   }
 
-  // OpenConnector navigator - show provider app info or gateway empty state
+  // OpenConnector navigator - native runtime console surface
   if (isOpenConnectorNavigation(navState)) {
-    if (navState.details?.type === 'provider') {
-      return wrapWithStoplight(
-        <Panel variant="grow" className={className}>
-          <SourceInfoPage
-            sourceSlug={navState.details.providerItemId}
-            workspaceId={activeWorkspaceId || ''}
-          />
-        </Panel>
-      )
-    }
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
-        <div className="flex items-center justify-center h-full text-muted-foreground">
-          <p className="text-sm">{t("openConnector.noProviderSelected")}</p>
-        </div>
+        <OpenConnectorConsolePage section={navState.section} details={navState.details} />
       </Panel>
     )
   }

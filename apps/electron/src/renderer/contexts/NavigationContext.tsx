@@ -608,11 +608,6 @@ export function NavigationProvider({
     [sources, openConnectorProviderItems]
   )
 
-  const getFirstOpenConnectorProviderItemId = useCallback(
-    (): string | null => openConnectorProviderItems[0]?.id ?? null,
-    [openConnectorProviderItems]
-  )
-
   const getFirstSkillSlug = useCallback(
     (): string | null => {
       return skills[0]?.slug ?? null
@@ -671,12 +666,8 @@ export function NavigationProvider({
         return nextState
       }
 
-      // OpenConnector: auto-select first gateway-backed provider app
-      if (isOpenConnectorNavigation(nextState) && !nextState.details && !options?.skipAutoSelect) {
-        const firstProviderItemId = getFirstOpenConnectorProviderItemId()
-        if (firstProviderItemId) {
-          return { ...nextState, details: { type: 'provider', providerItemId: firstProviderItemId } }
-        }
+      // OpenConnector: section routes intentionally do not auto-select a provider.
+      if (isOpenConnectorNavigation(nextState)) {
         return nextState
       }
 
@@ -691,7 +682,7 @@ export function NavigationProvider({
 
       return nextState
     },
-    [store, workspaceId, remoteWorkspaceId, getLastSelectedSessionId, getFirstSessionId, getFirstSourceSlug, getFirstOpenConnectorProviderItemId, getFirstSkillSlug]
+    [store, workspaceId, remoteWorkspaceId, getLastSelectedSessionId, getFirstSessionId, getFirstSourceSlug, getFirstSkillSlug]
   )
 
   // Ref keeps resolveAutoSelection fresh for reconcileFromUrlParams (defined earlier in the file)
@@ -1218,7 +1209,7 @@ export function NavigationProvider({
           navigate(routes.view.sourcesLocal(sourceSlug))
           return
         case 'openconnector':
-          navigate(routes.view.openConnector(sourceSlug))
+          navigate(routes.view.openConnector(typeof sourceSlug === 'string' ? sourceSlug : undefined))
           return
       }
     }

@@ -1,60 +1,100 @@
 import * as React from 'react'
-import { useTranslation } from 'react-i18next'
-import { Plug } from 'lucide-react'
-import { deriveConnectionStatus } from '@/components/ui/source-status-indicator'
+import { Activity, BookOpen, KeyRound, LayoutDashboard, ListChecks, Plug, ServerCog } from 'lucide-react'
 import { EntityPanel } from '@/components/ui/entity-panel'
 import { EntityListBadge } from '@/components/ui/entity-list-badge'
 import { EntityListEmptyScreen } from '@/components/ui/entity-list-empty'
 import { sourceSelection } from '@/hooks/useEntitySelection'
-import type { OpenConnectorProviderItem } from '@/lib/openconnector'
+import { useOpenConnectorRuntime } from '@/hooks/useOpenConnectorRuntime'
+import { createOpenConnectorOverviewSummary } from '@/lib/openconnector-runtime'
+import type { OpenConnectorSection } from '../../../shared/types'
 
-const SOURCE_STATUS_CONFIG: Record<string, { labelKey: string; colorClass: string } | null> = {
-  connected: null,
-  needs_auth: { labelKey: 'sourcesList.statusAuthRequired', colorClass: 'bg-warning/10 text-warning' },
-  failed: { labelKey: 'sourcesList.statusDisconnected', colorClass: 'bg-destructive/10 text-destructive' },
-  untested: { labelKey: 'sourcesList.statusNotTested', colorClass: 'bg-foreground/10 text-foreground/50' },
-  local_disabled: { labelKey: 'sourcesList.statusDisabled', colorClass: 'bg-foreground/10 text-foreground/50' },
+interface OpenConnectorNavItem {
+  id: OpenConnectorSection
+  title: string
+  description: string
+  countLabel?: string
+  icon: React.ReactNode
 }
 
 export interface OpenConnectorListPanelProps {
-  providerItems: OpenConnectorProviderItem[]
-  selectedProviderItemId?: string | null
-  onProviderClick: (providerItemId: string) => void
+  selectedSection: OpenConnectorSection
+  onSectionClick: (section: OpenConnectorSection) => void
   onAddGateway?: () => void
-  localMcpEnabled?: boolean
   className?: string
 }
 
 export function OpenConnectorListPanel({
-  providerItems,
-  selectedProviderItemId,
-  onProviderClick,
+  selectedSection,
+  onSectionClick,
   onAddGateway,
-  localMcpEnabled = true,
   className,
 }: OpenConnectorListPanelProps) {
-  const { t } = useTranslation()
   const { clearMultiSelect } = sourceSelection.useSelection()
+  const runtime = useOpenConnectorRuntime()
+  const summary = createOpenConnectorOverviewSummary(runtime.data)
 
   React.useEffect(() => {
     clearMultiSelect()
   }, [clearMultiSelect])
 
+  const items = React.useMemo<OpenConnectorNavItem[]>(() => [
+    {
+      id: 'overview',
+      title: 'Overview',
+      description: runtime.healthOk ? 'Runtime is reachable' : 'Runtime status and setup',
+      icon: <LayoutDashboard className="h-4 w-4" />,
+    },
+    {
+      id: 'providers',
+      title: 'Providers',
+      description: `${summary.connectedCount} connected`,
+      countLabel: String(summary.providerCount),
+      icon: <ServerCog className="h-4 w-4" />,
+    },
+    {
+      id: 'actions',
+      title: 'Actions',
+      description: `${summary.locallyExecutableActionCount} locally executable`,
+      countLabel: String(summary.actionCount),
+      icon: <ListChecks className="h-4 w-4" />,
+    },
+    {
+      id: 'runs',
+      title: 'Runs',
+      description: summary.failedRunCount > 0 ? `${summary.failedRunCount} recent failures` : 'Recent execution history',
+      countLabel: String(runtime.data.runs.length),
+      icon: <Activity className="h-4 w-4" />,
+    },
+    {
+      id: 'api-keys',
+      title: 'API Keys',
+      description: 'Runtime access tokens',
+      countLabel: String(summary.activeTokenCount),
+      icon: <KeyRound className="h-4 w-4" />,
+    },
+    {
+      id: 'docs',
+      title: 'Docs',
+      description: 'Console, OpenAPI and MCP metadata',
+      icon: <BookOpen className="h-4 w-4" />,
+    },
+  ], [runtime.data.runs.length, runtime.healthOk, summary.actionCount, summary.activeTokenCount, summary.connectedCount, summary.failedRunCount, summary.locallyExecutableActionCount, summary.providerCount])
+
   return (
-    <EntityPanel<OpenConnectorProviderItem>
-      items={providerItems}
+    <EntityPanel<OpenConnectorNavItem>
+      items={items}
       getId={(item) => item.id}
       selection={sourceSelection}
-      selectedId={selectedProviderItemId}
-      onItemClick={(item) => onProviderClick(item.id)}
+      selectedId={selectedSection}
+      onItemClick={(item) => onSectionClick(item.id)}
       className={className}
       multiSelect={false}
       containerProps={{ 'data-list-role': 'openconnector' }}
       emptyState={
         <EntityListEmptyScreen
           icon={<Plug />}
-          title={t('openConnector.emptyTitle')}
-          description={t('openConnector.emptyDescription')}
+          title="OpenConnector runtime"
+          description="Add or enable the OpenConnector gateway source to browse providers, actions, runs, and runtime API keys."
           docKey="sources"
         >
           {onAddGateway && (
@@ -62,41 +102,30 @@ export function OpenConnectorListPanel({
               onClick={onAddGateway}
               className="inline-flex items-center h-7 px-3 text-xs font-medium rounded-[8px] bg-background shadow-minimal hover:bg-foreground/[0.03] transition-colors"
             >
-              {t('openConnector.addGateway')}
+              Add gateway
             </button>
           )}
         </EntityListEmptyScreen>
       }
-      mapItem={(provider) => {
-        const connectionStatus = deriveConnectionStatus(provider.source, localMcpEnabled)
-        const statusConfig = SOURCE_STATUS_CONFIG[connectionStatus]
-        return {
-          icon: (
-            <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-foreground/[0.05] text-lg">
-              {provider.providerApp.icon}
-            </div>
-          ),
-          title: provider.providerApp.name,
-          badges: (
-            <>
-              <EntityListBadge colorClass="bg-accent/10 text-accent">{t('sourcesList.typeOpenConnectorApp')}</EntityListBadge>
-              {statusConfig && (
-                <EntityListBadge colorClass={statusConfig.colorClass} tooltip={provider.source.config.connectionError || undefined} className="cursor-default">
-                  {t(statusConfig.labelKey)}
-                </EntityListBadge>
-              )}
-              <span className="truncate">
-                {provider.providerApp.tagline}
-              </span>
-            </>
-          ),
-          trailing: (
-            <span className="truncate text-xs text-muted-foreground">
-              {t('sourceInfo.openConnectorActionCount', { count: provider.actionCount })}
-            </span>
-          ),
-        }
-      }}
+      mapItem={(item) => ({
+        icon: (
+          <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-foreground/[0.05] text-muted-foreground">
+            {item.icon}
+          </div>
+        ),
+        title: item.title,
+        badges: (
+          <>
+            <EntityListBadge colorClass={runtime.error ? 'bg-destructive/10 text-destructive' : 'bg-accent/10 text-accent'}>
+              {item.id === 'overview' ? (runtime.error ? 'Offline' : 'Runtime') : 'OpenConnector'}
+            </EntityListBadge>
+            <span className="truncate">{item.description}</span>
+          </>
+        ),
+        trailing: item.countLabel ? (
+          <span className="truncate text-xs text-muted-foreground">{item.countLabel}</span>
+        ) : null,
+      })}
     />
   )
 }

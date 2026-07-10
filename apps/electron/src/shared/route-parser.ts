@@ -15,6 +15,7 @@ import type {
   SourceFilter,
   AutomationFilter,
   RightSidebarPanel,
+  OpenConnectorSection,
 } from './types'
 import { isValidSettingsSubpage, type SettingsSubpage } from './settings-registry'
 
@@ -74,6 +75,50 @@ export function isCompoundRoute(route: string): boolean {
   return COMPOUND_ROUTE_PREFIXES.includes(firstSegment)
 }
 
+const OPENCONNECTOR_SECTIONS: OpenConnectorSection[] = ['overview', 'providers', 'actions', 'runs', 'api-keys', 'docs']
+
+function isOpenConnectorSection(value: string | undefined): value is OpenConnectorSection {
+  return value != null && OPENCONNECTOR_SECTIONS.includes(value as OpenConnectorSection)
+}
+
+function legacyOpenConnectorProviderIdToService(value: string): string {
+  const decoded = decodeURIComponent(value)
+  const separator = '::openconnector::'
+  const separatorIndex = decoded.indexOf(separator)
+  return separatorIndex === -1 ? decoded : decoded.slice(separatorIndex + separator.length)
+}
+
+function openConnectorNavigationFromSection(section: string | undefined): NavigationState {
+  return {
+    navigator: 'openconnector',
+    section: isOpenConnectorSection(section) ? section : 'overview',
+    details: null,
+  }
+}
+
+function openConnectorNavigationFromParsedDetails(
+  details: ParsedCompoundRoute['details'],
+): NavigationState {
+  if (!details || details.type === 'section') {
+    return openConnectorNavigationFromSection(details?.id)
+  }
+  if (details.type === 'provider') {
+    return {
+      navigator: 'openconnector',
+      section: 'providers',
+      details: { type: 'provider', service: legacyOpenConnectorProviderIdToService(details.id) },
+    }
+  }
+  if (details.type === 'action') {
+    return {
+      navigator: 'openconnector',
+      section: 'actions',
+      details: { type: 'action', actionId: details.id },
+    }
+  }
+  return openConnectorNavigationFromSection('overview')
+}
+
 /**
  * Parse a compound route into structured navigation
  *
@@ -128,16 +173,36 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
     }
   }
 
-  // OpenConnector top-level product navigator
+  // OpenConnector top-level runtime console navigator
   if (first === 'openconnector') {
     if (segments.length === 1) {
-      return { navigator: 'openconnector', details: null }
+      return { navigator: 'openconnector', details: { type: 'section', id: 'overview' } }
     }
 
-    if (segments[1] === 'provider' && segments[2]) {
+    const section = segments[1]
+    if (section === 'overview' || section === 'runs' || section === 'api-keys' || section === 'docs') {
+      return { navigator: 'openconnector', details: { type: 'section', id: section } }
+    }
+
+    if (section === 'providers') {
+      if (segments[2]) {
+        return { navigator: 'openconnector', details: { type: 'provider', id: decodeURIComponent(segments[2]) } }
+      }
+      return { navigator: 'openconnector', details: { type: 'section', id: 'providers' } }
+    }
+
+    if (section === 'actions') {
+      if (segments[2]) {
+        return { navigator: 'openconnector', details: { type: 'action', id: decodeURIComponent(segments[2]) } }
+      }
+      return { navigator: 'openconnector', details: { type: 'section', id: 'actions' } }
+    }
+
+    // Legacy compatibility: openconnector/provider/{sourceSlug::openconnector::providerId}
+    if (section === 'provider' && segments[2]) {
       return {
         navigator: 'openconnector',
-        details: { type: 'provider', id: segments[2] },
+        details: { type: 'provider', id: legacyOpenConnectorProviderIdToService(segments[2]) },
       }
     }
 
@@ -155,10 +220,10 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
       if (segments[2] === 'source' && segments[3]) {
         return {
           navigator: 'openconnector',
-          details: { type: 'provider', id: segments[3] },
+          details: { type: 'provider', id: legacyOpenConnectorProviderIdToService(segments[3]) },
         }
       }
-      return { navigator: 'openconnector', details: null }
+      return { navigator: 'openconnector', details: { type: 'section', id: 'overview' } }
     }
 
     // Check for source type filter: sources/api, sources/mcp, sources/local
@@ -336,8 +401,17 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
   }
 
   if (parsed.navigator === 'openconnector') {
-    if (!parsed.details) return 'openconnector'
-    return `openconnector/provider/${parsed.details.id}`
+    if (!parsed.details) return 'openconnector/overview'
+    if (parsed.details.type === 'section') {
+      return `openconnector/${parsed.details.id}`
+    }
+    if (parsed.details.type === 'provider') {
+      return `openconnector/providers/${encodeURIComponent(parsed.details.id)}`
+    }
+    if (parsed.details.type === 'action') {
+      return `openconnector/actions/${encodeURIComponent(parsed.details.id)}`
+    }
+    return 'openconnector/overview'
   }
 
   if (parsed.navigator === 'skills') {
@@ -472,10 +546,16 @@ function convertCompoundToViewRoute(compound: ParsedCompoundRoute): ParsedRoute 
 
   // OpenConnector
   if (compound.navigator === 'openconnector') {
-    if (!compound.details) {
-      return { type: 'view', name: 'openconnector', params: {} }
+    if (!compound.details || compound.details.type === 'section') {
+      return { type: 'view', name: 'openconnector', id: compound.details?.id, params: {} }
     }
-    return { type: 'view', name: 'openconnector-provider', id: compound.details.id, params: {} }
+    if (compound.details.type === 'provider') {
+      return { type: 'view', name: 'openconnector-provider', id: compound.details.id, params: {} }
+    }
+    if (compound.details.type === 'action') {
+      return { type: 'view', name: 'openconnector-action', id: compound.details.id, params: {} }
+    }
+    return { type: 'view', name: 'openconnector', params: {} }
   }
 
   // Skills
@@ -612,13 +692,7 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
 
   // OpenConnector
   if (compound.navigator === 'openconnector') {
-    if (!compound.details) {
-      return { navigator: 'openconnector', details: null }
-    }
-    return {
-      navigator: 'openconnector',
-      details: { type: 'provider', providerItemId: compound.details.id },
-    }
+    return openConnectorNavigationFromParsedDetails(compound.details)
   }
 
   // Skills
@@ -701,18 +775,31 @@ function convertParsedRouteToNavigationState(parsed: ParsedRoute): NavigationSta
     case 'sources':
       return { navigator: 'sources', details: null }
     case 'openconnector':
-      return { navigator: 'openconnector', details: null }
+      return openConnectorNavigationFromSection(parsed.id)
     case 'openconnector-provider':
       if (parsed.id) {
         return {
           navigator: 'openconnector',
+          section: 'providers',
           details: {
             type: 'provider',
-            providerItemId: parsed.id,
+            service: legacyOpenConnectorProviderIdToService(parsed.id),
           },
         }
       }
-      return { navigator: 'openconnector', details: null }
+      return { navigator: 'openconnector', section: 'overview', details: null }
+    case 'openconnector-action':
+      if (parsed.id) {
+        return {
+          navigator: 'openconnector',
+          section: 'actions',
+          details: {
+            type: 'action',
+            actionId: parsed.id,
+          },
+        }
+      }
+      return { navigator: 'openconnector', section: 'actions', details: null }
     case 'source-info':
       if (parsed.id) {
         return {
@@ -856,7 +943,11 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
   if (state.navigator === 'openconnector') {
     return {
       navigator: 'openconnector',
-      details: state.details?.type === 'provider' ? { type: 'provider', id: state.details.providerItemId } : null,
+      details: state.details?.type === 'provider'
+        ? { type: 'provider', id: state.details.service }
+        : state.details?.type === 'action'
+          ? { type: 'action', id: state.details.actionId }
+          : { type: 'section', id: state.section },
     }
   }
 

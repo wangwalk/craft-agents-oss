@@ -89,7 +89,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, SourceCollectionFilterType, AutomationFilter } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, SourceCollectionFilterType, AutomationFilter, OpenConnectorSection } from "../../../shared/types"
 import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { openConnectorProviderItemsAtom } from "@/atoms/openconnector-sources"
@@ -1175,9 +1175,9 @@ function AppShellContent({
     navigateToSource(sourceId)
   }, [activeWorkspaceId, navigateToSource])
 
-  const handleOpenConnectorProviderSelect = React.useCallback((providerItemId: string) => {
+  const handleOpenConnectorSectionSelect = React.useCallback((section: OpenConnectorSection) => {
     if (!activeWorkspaceId) return
-    navigate(routes.view.openConnector(providerItemId))
+    navigate(routes.view.openConnector({ section }))
   }, [activeWorkspaceId, navigate])
 
   // Handle selecting a skill from the list
@@ -3257,11 +3257,9 @@ function AppShellContent({
             )}
             {isOpenConnectorNavigation(navState) && (
               <OpenConnectorListPanel
-                providerItems={openConnectorNavItems}
-                selectedProviderItemId={navState.details?.type === 'provider' ? navState.details.providerItemId : null}
-                onProviderClick={handleOpenConnectorProviderSelect}
+                selectedSection={navState.section}
+                onSectionClick={handleOpenConnectorSectionSelect}
                 onAddGateway={() => openAddSource('openconnector')}
-                localMcpEnabled={localMcpEnabled}
               />
             )}
             {isSkillsNavigation(navState) && activeWorkspaceId && (
