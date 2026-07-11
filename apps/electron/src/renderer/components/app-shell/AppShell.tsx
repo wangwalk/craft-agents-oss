@@ -108,6 +108,7 @@ import { resolveEntityColor } from "@craft-agent/shared/colors"
 import * as storage from "@/lib/local-storage"
 import { toast } from "sonner"
 import { navigate, routes } from "@/lib/navigate"
+import { resolveNewSessionInheritance } from "@/lib/new-session-inheritance"
 import {
   useNavigation,
   useNavigationState,
@@ -2014,30 +2015,20 @@ function AppShellContent({
   }, [activeWorkspace?.id, navigate, t])
 
   /**
-   * Resolve the "inherit sole active filter" rule: if exactly one filter value
-   * is selected across statuses + labels + projects, return it as new-session
-   * params. Otherwise return null (fall back to workspace defaults).
+   * Resolve metadata inherited by the global new-session action. A concrete
+   * project detail page is the strongest context; elsewhere, preserve the
+   * existing "inherit the sole active filter" behavior.
    */
-  const resolveInheritedNewSessionParams = useCallback((): { status?: string; label?: string; project?: string } | null => {
-    const statusCount = listFilter.size
-    const labelCount = labelFilter.size
-    const projectCount = projectFilter.size
-    const total = statusCount + labelCount + projectCount
-    if (total !== 1) return null
-    if (statusCount === 1) {
-      const [stateId] = [...listFilter.keys()]
-      return { status: stateId }
-    }
-    if (labelCount === 1) {
-      const [labelId] = [...labelFilter.keys()]
-      return { label: labelId }
-    }
-    if (projectCount === 1) {
-      const [projectId] = [...projectFilter.keys()]
-      return { project: projectId }
-    }
-    return null
-  }, [listFilter, labelFilter, projectFilter])
+  const resolveInheritedNewSessionParams = useCallback(
+    () => resolveNewSessionInheritance({
+      navState,
+      projects,
+      statuses: listFilter,
+      labels: labelFilter,
+      projectFilters: projectFilter,
+    }),
+    [navState, projects, listFilter, labelFilter, projectFilter],
+  )
 
   // Create a new chat and select it
   const handleNewChat = useCallback((newPanel: boolean = false) => {
