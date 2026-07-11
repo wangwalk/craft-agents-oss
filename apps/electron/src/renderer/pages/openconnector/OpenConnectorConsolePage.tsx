@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { AlertCircle, ArrowUpRight, BookOpen, CheckCircle2, Copy, KeyRound, Loader2, RefreshCw, Search, ShieldAlert, Trash2, TerminalSquare } from 'lucide-react'
+import { AlertCircle, BookOpen, CheckCircle2, Copy, KeyRound, Loader2, RefreshCw, Search, ShieldAlert, Trash2, TerminalSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -66,22 +66,10 @@ export function OpenConnectorConsolePage({ section, details }: OpenConnectorCons
             <span className="truncate">{runtime.gatewaySource ? runtimeLabel : 'Gateway not configured'}</span>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void runtime.refresh()}>
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!canOpenConsole}
-            title={runtime.baseUrl && !canOpenConsole ? 'The console is bound to the remote host and is not directly reachable from this Mac.' : undefined}
-            onClick={() => openRuntimeUrl()}
-          >
-            <ArrowUpRight className="h-4 w-4" />
-            {isRemoteRuntime && !canOpenConsole ? 'Console on VPS' : 'Open Console'}
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" onClick={() => void runtime.refresh()}>
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </Button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
@@ -93,7 +81,7 @@ export function OpenConnectorConsolePage({ section, details }: OpenConnectorCons
           <RuntimeError message={runtime.error} baseUrl={externalBaseUrl} onOpen={() => openRuntimeUrl()} />
         ) : (
           <>
-            {section === 'overview' ? <OverviewSection data={data} summary={summary} healthOk={runtime.healthOk} baseUrl={externalBaseUrl} onOpen={openRuntimeUrl} /> : null}
+            {section === 'overview' ? <OverviewSection data={data} summary={summary} healthOk={runtime.healthOk} /> : null}
             {section === 'providers' ? <ProvidersSection data={data} selectedService={details?.type === 'provider' ? details.service : null} gatewaySource={runtime.gatewaySource} onRefresh={runtime.refresh} /> : null}
             {section === 'actions' ? <ActionsSection data={data} selectedActionId={details?.type === 'action' ? details.actionId : null} baseUrl={externalBaseUrl} gatewaySource={runtime.gatewaySource} /> : null}
             {section === 'runs' ? <RunsSection runs={data.runs} /> : null}
@@ -162,34 +150,23 @@ function OverviewSection({
   data,
   summary,
   healthOk,
-  baseUrl,
-  onOpen,
 }: {
   data: OpenConnectorAppData
   summary: ReturnType<typeof createOpenConnectorOverviewSummary>
   healthOk: boolean
-  baseUrl: string | null
-  onOpen: (path?: string) => void
 }) {
   const recentRuns = data.runs.slice(0, 6)
   return (
     <div className="space-y-5">
       <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              {healthOk ? <CheckCircle2 className="h-5 w-5 text-emerald-500" /> : <AlertCircle className="h-5 w-5 text-amber-500" />}
-              <h2 className="text-base font-semibold">Runtime {healthOk ? 'ready' : 'reachable via admin API'}</h2>
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {healthOk ? 'Catalog and admin APIs are reachable through Craft Server.' : 'Check the gateway and runtime process.'}
-            </p>
+        <div>
+          <div className="flex items-center gap-2">
+            {healthOk ? <CheckCircle2 className="h-5 w-5 text-emerald-500" /> : <AlertCircle className="h-5 w-5 text-amber-500" />}
+            <h2 className="text-base font-semibold">OpenConnector {healthOk ? 'is ready' : 'needs attention'}</h2>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={!baseUrl} onClick={() => onOpen('/docs')}>Docs</Button>
-            <Button variant="outline" size="sm" disabled={!baseUrl} onClick={() => onOpen('/openapi.json')}>OpenAPI</Button>
-            <Button variant="outline" size="sm" disabled={!baseUrl} onClick={() => onOpen('/mcp/tools')}>MCP Tools</Button>
-          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {healthOk ? 'Connected providers are ready for Craft Agent.' : 'Check the gateway and runtime process.'}
+          </p>
         </div>
       </div>
 
@@ -325,7 +302,6 @@ function ProvidersSection({
                     <h3 className="truncate text-sm font-medium">{provider.displayName}</h3>
                     <ProviderStatusBadge status={status} />
                   </div>
-                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{provider.service}</p>
                   <div className="mt-2.5 flex min-h-5 flex-wrap items-center gap-1.5">
                     <span className="text-[11px] tabular-nums text-muted-foreground">{provider.actions.length} actions</span>
                     {provider.categories.slice(0, 2).map((item) => (
@@ -511,7 +487,7 @@ function ConnectedProviderCard({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-sm font-medium">{label ?? 'Ready to use'}</div>
-          <div className="mt-1 text-xs text-muted-foreground">Credentials are configured in OpenConnector.</div>
+          <div className="mt-1 text-xs text-muted-foreground">Ready for Craft Agent.</div>
         </div>
         <div className="flex gap-2">
           {onEdit ? <Button variant="outline" size="sm" onClick={onEdit}>Edit credentials</Button> : null}
@@ -882,13 +858,37 @@ function ActionList({ actions, compact = false }: { actions: OpenConnectorAction
     setVisibleCount(pageSize)
   }, [actions, pageSize])
 
+  if (compact) {
+    return (
+      <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
+        {visibleActions.map((action) => (
+          <button
+            key={action.id}
+            type="button"
+            className="block w-full border-b border-border/40 px-4 py-3 text-left transition-colors last:border-0 hover:bg-foreground/[0.025]"
+            onClick={() => navigate(routes.view.openConnector({ actionId: action.id }))}
+          >
+            <div className="text-sm font-medium">{action.name.replaceAll('_', ' ')}</div>
+            <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{action.description}</div>
+          </button>
+        ))}
+        {visibleActions.length < actions.length ? (
+          <div className="flex items-center justify-between border-t border-border/50 px-4 py-3">
+            <span className="text-xs tabular-nums text-muted-foreground">Showing {visibleActions.length.toLocaleString()} of {actions.length.toLocaleString()}</span>
+            <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + pageSize)}>Load more</Button>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
   return (
     <div className="overflow-hidden rounded-xl border border-border/60 bg-card">
       <table className="w-full text-left text-sm">
         <thead className="border-b border-border/60 bg-foreground/[0.02] text-xs text-muted-foreground">
           <tr>
             <th className="px-4 py-3 font-medium">Action</th>
-            {!compact ? <th className="px-4 py-3 font-medium">Provider</th> : null}
+            <th className="px-4 py-3 font-medium">Provider</th>
             <th className="px-4 py-3 font-medium">Runtime</th>
             <th className="px-4 py-3 font-medium">Auth</th>
           </tr>
@@ -902,7 +902,7 @@ function ActionList({ actions, compact = false }: { actions: OpenConnectorAction
                   <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{action.description}</div>
                 </button>
               </td>
-              {!compact ? <td className="px-4 py-3 font-mono text-xs">{action.service}</td> : null}
+              <td className="px-4 py-3 font-mono text-xs">{action.service}</td>
               <td className="px-4 py-3"><ExecutionBadge action={action} /></td>
               <td className="px-4 py-3 text-xs text-muted-foreground">{action.execution.noAuthRunnable ? 'No auth' : action.execution.needsCredential ? 'Credential' : action.execution.requiredAuthTypes.join(', ')}</td>
             </tr>
@@ -911,12 +911,8 @@ function ActionList({ actions, compact = false }: { actions: OpenConnectorAction
       </table>
       {visibleActions.length < actions.length ? (
         <div className="flex items-center justify-between border-t border-border/50 px-4 py-3">
-          <span className="text-xs tabular-nums text-muted-foreground">
-            Showing {visibleActions.length.toLocaleString()} of {actions.length.toLocaleString()}
-          </span>
-          <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + pageSize)}>
-            Load more
-          </Button>
+          <span className="text-xs tabular-nums text-muted-foreground">Showing {visibleActions.length.toLocaleString()} of {actions.length.toLocaleString()}</span>
+          <Button variant="outline" size="sm" onClick={() => setVisibleCount((count) => count + pageSize)}>Load more</Button>
         </div>
       ) : null}
     </div>
@@ -1153,9 +1149,9 @@ function ProviderIcon({ provider, size = 'md' }: { provider: OpenConnectorProvid
 
 function ProviderStatusBadge({ status }: { status: ReturnType<typeof resolveOpenConnectorProviderConnectionStatus> }) {
   if (status.connected) return <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] font-medium text-emerald-600"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Connected</span>
-  if (status.noSetupRequired) return <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-foreground/30" />No setup</span>
-  if (status.oauthClientRequired) return <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] text-amber-600"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" />OAuth setup</span>
-  return <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-foreground/20" />Needs setup</span>
+  if (status.noSetupRequired) return <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] font-medium text-emerald-600"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Ready</span>
+  if (status.oauthClientRequired) return <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] text-amber-600"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" />Connect</span>
+  return <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-foreground/20" />Connect</span>
 }
 
 function ExecutionBadge({ action }: { action: OpenConnectorActionSummary }) {
