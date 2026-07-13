@@ -80,6 +80,7 @@ export function MainContentPanel({
     labels,
     onTestAutomation,
     onToggleAutomation,
+    onSetAutomationProject,
     onDuplicateAutomation,
     onDeleteAutomation,
     onReplayAutomation,
@@ -352,6 +353,7 @@ export function MainContentPanel({
               testResult={automationTestResults?.[automation.id]}
               onTest={onTestAutomation ? () => onTestAutomation(automation.id) : undefined}
               onToggleEnabled={onToggleAutomation ? () => onToggleAutomation(automation.id) : undefined}
+              onSetProject={onSetAutomationProject ? (projectId) => onSetAutomationProject(automation.id, projectId) : undefined}
               onDuplicate={onDuplicateAutomation ? () => onDuplicateAutomation(automation.id) : undefined}
               onDelete={onDeleteAutomation ? () => onDeleteAutomation(automation.id) : undefined}
               onReplay={onReplayAutomation}

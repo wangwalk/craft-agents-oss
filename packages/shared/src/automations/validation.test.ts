@@ -68,6 +68,34 @@ describe('validation', () => {
       expect(result.valid).toBe(true);
     });
 
+    it('should accept a stable projectId binding', () => {
+      const config = {
+        automations: {
+          SchedulerTick: [{
+            projectId: '7e3a0f1d-7df1-45a2-93b9-8b45e909d564',
+            cron: '0 8 * * *',
+            actions: [{ type: 'prompt', prompt: 'Run project triage' }],
+          }],
+        },
+      };
+      const result = validateAutomationsConfig(config);
+      expect(result.valid).toBe(true);
+      expect(result.config?.automations.SchedulerTick?.[0]?.projectId).toBe(config.automations.SchedulerTick[0].projectId);
+    });
+
+    it('should reject an empty projectId binding', () => {
+      const result = validateAutomationsConfig({
+        automations: {
+          SchedulerTick: [{
+            projectId: '',
+            cron: '0 8 * * *',
+            actions: [{ type: 'prompt', prompt: 'Run project triage' }],
+          }],
+        },
+      });
+      expect(result.valid).toBe(false);
+    });
+
     it('should accept config with optional name field', () => {
       const config = {
         automations: {

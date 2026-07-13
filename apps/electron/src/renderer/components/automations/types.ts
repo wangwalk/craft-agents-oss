@@ -219,6 +219,8 @@ export interface AutomationListItem {
   permissionMode?: PermissionMode
   /** Labels for prompt sessions */
   labels?: string[]
+  /** Workspace Project bound to prompt sessions */
+  projectId?: string
   /** Conditions that must pass before actions run */
   conditions?: AutomationConditionUI[]
   /** The actions this automation performs */
@@ -383,6 +385,7 @@ interface AutomationsConfigMatcher {
   timezone?: string
   permissionMode?: PermissionMode
   labels?: string[]
+  projectId?: string
   conditions?: AutomationConditionUI[]
   enabled?: boolean
   actions?: RawAction[]
@@ -476,6 +479,7 @@ export function parseAutomationsConfig(json: unknown): AutomationListItem[] {
         timezone: matcher.timezone,
         permissionMode: matcher.permissionMode,
         labels: matcher.labels,
+        projectId: matcher.projectId,
         conditions: matcher.conditions,
         actions,
         telegramTopic,

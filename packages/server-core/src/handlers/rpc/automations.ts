@@ -57,6 +57,7 @@ async function withAutomationMatcher(workspaceId: string, eventName: string, mat
 export const HANDLED_CHANNELS = [
   RPC_CHANNELS.automations.GET,
   RPC_CHANNELS.automations.TEST,
+  RPC_CHANNELS.automations.SET_PROJECT,
   RPC_CHANNELS.automations.SET_ENABLED,
   RPC_CHANNELS.automations.DUPLICATE,
   RPC_CHANNELS.automations.DELETE,
@@ -147,6 +148,7 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
           workspaceRootPath: workspace.rootPath,
           prompt: action.prompt,
           labels: payload.labels,
+          projectId: payload.projectId,
           permissionMode: payload.permissionMode,
           mentions: references.mentions,
           llmConnection: action.llmConnection,
@@ -196,6 +198,27 @@ export function registerAutomationsHandlers(server: RpcServer, deps: HandlerDeps
     }
 
     return { actions: results } satisfies import('@craft-agent/shared/protocol').TestAutomationResult
+  })
+
+  // Bind/unbind prompt sessions from a workspace Project.
+  server.handle(RPC_CHANNELS.automations.SET_PROJECT, async (_ctx, workspaceId: string, eventName: string, matcherIndex: number, projectId: string | null) => {
+    const workspace = getWorkspaceByNameOrId(workspaceId)
+    if (!workspace) throw new Error('Workspace not found')
+
+    if (projectId) {
+      const { loadProjectById } = await import('@craft-agent/shared/projects')
+      const project = loadProjectById(workspace.rootPath, projectId)
+      if (!project) throw new Error(`Project ${projectId} not found`)
+      if (project.config.archivedAt) throw new Error(`Project ${project.config.name} is archived`)
+    }
+
+    await withAutomationMatcher(workspaceId, eventName, matcherIndex, (matchers, idx) => {
+      if (projectId) {
+        matchers[idx].projectId = projectId
+      } else {
+        delete matchers[idx].projectId
+      }
+    })
   })
 
   // Automation enabled state management (toggle enabled/disabled in automations.json)

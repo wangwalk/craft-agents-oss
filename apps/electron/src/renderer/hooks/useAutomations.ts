@@ -30,6 +30,7 @@ export interface UseAutomationsResult {
   setAutomationPendingDelete: (id: string | null) => void
   handleTestAutomation: (automationId: string) => void
   handleToggleAutomation: (automationId: string) => void
+  handleSetAutomationProject: (automationId: string, projectId: string | null) => void
   handleDuplicateAutomation: (automationId: string) => void
   handleDeleteAutomation: (automationId: string) => void
   confirmDeleteAutomation: () => void
@@ -99,6 +100,7 @@ export function useAutomations(
       actions: automation.actions,
       permissionMode: automation.permissionMode,
       labels: automation.labels,
+      projectId: automation.projectId,
       telegramTopic: automation.telegramTopic,
     }).then((result) => {
       const actions = result.actions
@@ -133,6 +135,19 @@ export function useAutomations(
       !automation.enabled,
     ).catch(() => {
       toast.error(t('toast.failedToToggleAutomation'))
+    })
+  }, [findAutomation, activeWorkspaceId])
+
+  const handleSetAutomationProject = useCallback((automationId: string, projectId: string | null) => {
+    const automation = findAutomation(automationId)
+    if (!automation || !activeWorkspaceId) return
+    window.electronAPI.setAutomationProject(
+      activeWorkspaceId,
+      automation.event,
+      automation.matcherIndex,
+      projectId,
+    ).catch((err: Error) => {
+      toast.error(err.message)
     })
   }, [findAutomation, activeWorkspaceId])
 
@@ -210,6 +225,7 @@ export function useAutomations(
     setAutomationPendingDelete,
     handleTestAutomation,
     handleToggleAutomation,
+    handleSetAutomationProject,
     handleDuplicateAutomation,
     handleDeleteAutomation,
     confirmDeleteAutomation,

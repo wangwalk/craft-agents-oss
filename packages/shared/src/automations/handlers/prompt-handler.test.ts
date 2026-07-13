@@ -146,6 +146,31 @@ describe('PromptHandler', () => {
       handler.dispose();
     });
 
+    it('should propagate projectId from matcher to PendingPrompt', async () => {
+      const onPromptsReady = jest.fn();
+      const configProvider = createMockConfigProvider({
+        LabelAdd: [{
+          matcher: 'project-work',
+          projectId: 'project-123',
+          actions: [{ type: 'prompt', prompt: 'Run @project-skill' }],
+        }],
+      });
+
+      const handler = new PromptHandler(createOptions({ onPromptsReady }), configProvider);
+      handler.subscribe(bus);
+
+      await bus.emit('LabelAdd', {
+        workspaceId: 'test-workspace',
+        timestamp: Date.now(),
+        label: 'project-work',
+      });
+
+      const prompts: PendingPrompt[] = onPromptsReady.mock.calls[0]![0];
+      expect(prompts[0]!.projectId).toBe('project-123');
+
+      handler.dispose();
+    });
+
     it('should leave thinkingLevel undefined when omitted (workspace default applies downstream)', async () => {
       const onPromptsReady = jest.fn();
       const configProvider = createMockConfigProvider({

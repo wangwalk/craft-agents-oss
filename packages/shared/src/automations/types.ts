@@ -163,6 +163,11 @@ export interface AutomationMatcher {
   permissionMode?: PermissionMode;
   /** Labels to apply to sessions created by prompt actions */
   labels?: string[];
+  /**
+   * Optional workspace Project ID for sessions created by prompt actions.
+   * Bound sessions inherit the Project working directory and prompt context.
+   */
+  projectId?: string;
   /** Whether this automation matcher is enabled. Defaults to true. Set to false to disable without removing. */
   enabled?: boolean;
   /** Optional conditions that must all pass (AND) after matcher matches, before actions fire */
@@ -248,6 +253,8 @@ export interface PendingPrompt {
   mentions: string[];
   /** Labels to apply to the created session */
   labels?: string[];
+  /** Workspace Project ID to bind to the created session. */
+  projectId?: string;
   /** Permission mode for the created session (from matcher config) */
   permissionMode?: PermissionMode;
   /** LLM connection slug for the created session (falls back to default if not found) */

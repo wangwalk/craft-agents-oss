@@ -7,7 +7,8 @@
 
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
-import { PauseCircle, AlertCircle, Hash } from 'lucide-react'
+import { useAtomValue } from 'jotai'
+import { PauseCircle, AlertCircle, Check, FolderKanban, Hash } from 'lucide-react'
 import {
   Info_Page,
   Info_Section,
@@ -17,6 +18,13 @@ import {
   Info_Markdown,
 } from '@/components/info'
 import { EditPopover, EditButton, getEditConfig } from '@/components/ui/EditPopover'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { projectsAtom } from '@/atoms/projects'
 import { useActiveWorkspace } from '@/context/AppShellContext'
 import { AutomationAvatar } from './AutomationAvatar'
 import { AutomationMenu } from './AutomationMenu'
@@ -36,6 +44,7 @@ export interface AutomationInfoPageProps {
   executions?: ExecutionEntry[]
   testResult?: TestResult
   onToggleEnabled?: () => void
+  onSetProject?: (projectId: string | null) => void
   onTest?: () => void
   onDuplicate?: () => void
   onDelete?: () => void
@@ -48,6 +57,7 @@ export function AutomationInfoPage({
   executions = [],
   testResult,
   onToggleEnabled,
+  onSetProject,
   onTest,
   onDuplicate,
   onDelete,
@@ -56,6 +66,9 @@ export function AutomationInfoPage({
 }: AutomationInfoPageProps) {
   const { t } = useTranslation()
   const workspace = useActiveWorkspace()
+  const projects = useAtomValue(projectsAtom)
+  const selectableProjects = projects.filter((project) => !project.config.archivedAt)
+  const boundProject = projects.find((project) => project.config.id === automation.projectId)
   const nextRuns = automation.cron ? computeNextRuns(automation.cron) : []
 
   // Lightweight per-mount fetch — mirrors the pattern used in MessagingSettingsPage.
@@ -213,6 +226,42 @@ export function AutomationInfoPage({
         <Info_Section title={t('automations.sectionSettings')} actions={editActions}>
           <Info_Table>
             <Info_Table.Row label={t('automations.labelAccessLevel')} value={getPermissionDisplayName(automation.permissionMode)} />
+            <Info_Table.Row label={t('tasks.project')}>
+              {onSetProject ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex max-w-[280px] items-center gap-1.5 rounded-md border border-border/70 bg-background px-2 py-1 text-xs hover:bg-foreground/[0.03]"
+                    >
+                      <FolderKanban className="size-3.5 shrink-0 text-foreground/50" />
+                      <span className="truncate">
+                        {boundProject?.config.name ?? (automation.projectId || t('tasks.noProject'))}
+                      </span>
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="min-w-[200px]">
+                    <DropdownMenuItem onSelect={() => onSetProject(null)}>
+                      <span className="flex-1">{t('tasks.noProject')}</span>
+                      {!automation.projectId && <Check className="size-3.5" />}
+                    </DropdownMenuItem>
+                    {selectableProjects.map((project) => (
+                      <DropdownMenuItem
+                        key={project.config.id}
+                        onSelect={() => onSetProject(project.config.id)}
+                      >
+                        <span className="flex-1 truncate">{project.config.name}</span>
+                        {automation.projectId === project.config.id && <Check className="size-3.5" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <span className="text-sm text-foreground/70">
+                  {boundProject?.config.name ?? (automation.projectId || t('tasks.noProject'))}
+                </span>
+              )}
+            </Info_Table.Row>
             <Info_Table.Row label={t('automations.labelStatus')}>
               <Info_Badge color={automation.enabled ? 'success' : 'muted'}>
                 {automation.enabled ? t('automations.statusActive') : t('automations.statusDisabled')}
@@ -265,6 +314,7 @@ export function AutomationInfoPage({
                 timezone: automation.timezone,
                 permissionMode: automation.permissionMode,
                 labels: automation.labels,
+                projectId: automation.projectId,
                 telegramTopic: automation.telegramTopic,
                 enabled: automation.enabled,
                 actions: automation.actions,

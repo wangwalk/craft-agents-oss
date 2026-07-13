@@ -680,6 +680,7 @@ export interface ElectronAPI {
   testAutomation(payload: TestAutomationPayload): Promise<TestAutomationResult>
 
   // Automation state management
+  setAutomationProject(workspaceId: string, eventName: string, matcherIndex: number, projectId: string | null): Promise<void>
   setAutomationEnabled(workspaceId: string, eventName: string, matcherIndex: number, enabled: boolean): Promise<void>
   duplicateAutomation(workspaceId: string, eventName: string, matcherIndex: number): Promise<void>
   deleteAutomation(workspaceId: string, eventName: string, matcherIndex: number): Promise<void>

@@ -337,6 +337,32 @@ For `SchedulerTick` events, use cron expressions instead of regex:
 
 **Timezone:** Use IANA timezone names (e.g., `Europe/Budapest`, `America/New_York`). Defaults to system timezone if not specified.
 
+### Project Binding
+
+Use the optional `projectId` field to bind sessions created by prompt actions to a workspace Project:
+
+```json
+{
+  "name": "Daily project triage",
+  "cron": "0 9 * * 1-5",
+  "projectId": "7e3a0f1d-7df1-45a2-93b9-8b45e909d564",
+  "actions": [
+    { "type": "prompt", "prompt": "Run the @issue-triage skill" }
+  ]
+}
+```
+
+Use the stable Project **ID**, not its name or slug. A bound prompt session:
+
+- is attached to the Project and appears in Project-filtered views;
+- inherits the Project working directory when it has one;
+- receives normal Project context, assets, and `MEMORY.md` injection;
+- resolves `@skill` references with project-level `.agents/skills/` precedence.
+
+The Automation detail page exposes a Project picker in **Settings**. If the bound Project is missing or archived when the Automation runs, the prompt action fails explicitly instead of running from the workspace default directory. Existing Automations without `projectId` keep their current workspace-only behavior.
+
+Project binding applies only to prompt actions. Webhook actions do not create sessions and are unaffected.
+
 ## Conditions
 
 Conditions are optional filters that run **after** the matcher/cron matches but **before** actions fire. All conditions in the array must pass (implicit AND). If the array is empty or omitted, actions fire unconditionally.
