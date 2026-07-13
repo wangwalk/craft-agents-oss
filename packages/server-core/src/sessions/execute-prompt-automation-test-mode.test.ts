@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { mkdtempSync, rmSync } from 'fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { SessionManager } from './SessionManager.ts'
@@ -67,5 +67,87 @@ describe('executePromptAutomation waitForCompletion', () => {
         prompt: 'do something',
       }),
     ).rejects.toThrow('send failed')
+  })
+
+  it('binds the session and resolves project-level skills from the Project working directory', async () => {
+    const projectRoot = join(tmpRoot, 'repo')
+    const projectDir = join(tmpRoot, 'projects', 'demo')
+    mkdirSync(join(projectRoot, '.agents', 'skills', 'project-skill'), { recursive: true })
+    mkdirSync(projectDir, { recursive: true })
+    writeFileSync(join(projectDir, 'config.json'), JSON.stringify({
+      id: 'project-123',
+      slug: 'demo',
+      name: 'Demo',
+      workingDirectory: projectRoot,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }))
+    writeFileSync(join(projectRoot, '.agents', 'skills', 'project-skill', 'SKILL.md'), [
+      '---',
+      'name: Project Skill',
+      'description: Project-only automation skill',
+      '---',
+      '',
+      'Run the project workflow.',
+    ].join('\n'))
+
+    let createOptions: Record<string, unknown> | undefined
+    let sendOptions: Record<string, unknown> | undefined
+    ;(sm as unknown as { createSession: unknown }).createSession = async (_workspaceId: string, options: Record<string, unknown>) => {
+      createOptions = options
+      return { id: 'project-session' }
+    }
+    ;(sm as unknown as { sendMessage: unknown }).sendMessage = async (
+      _sessionId: string,
+      _prompt: string,
+      _attachments: unknown,
+      _storedAttachments: unknown,
+      options: Record<string, unknown>,
+    ) => {
+      sendOptions = options
+    }
+
+    await sm.executePromptAutomation({
+      workspaceId: 'ws_test',
+      workspaceRootPath: tmpRoot,
+      projectId: 'project-123',
+      prompt: 'Run @project-skill',
+      mentions: ['project-skill'],
+    })
+
+    expect(createOptions?.projectId).toBe('project-123')
+    expect(sendOptions?.skillSlugs).toEqual(['project-skill'])
+  })
+
+  it('fails closed when the bound Project no longer exists', async () => {
+    ;(sm as unknown as { sendMessage: unknown }).sendMessage = async () => {}
+
+    await expect(sm.executePromptAutomation({
+      workspaceId: 'ws_test',
+      workspaceRootPath: tmpRoot,
+      projectId: 'missing-project',
+      prompt: 'do not run in the wrong repository',
+    })).rejects.toThrow('Automation project missing-project not found')
+  })
+
+  it('fails closed when the bound Project is archived', async () => {
+    const projectDir = join(tmpRoot, 'projects', 'archived')
+    mkdirSync(projectDir, { recursive: true })
+    writeFileSync(join(projectDir, 'config.json'), JSON.stringify({
+      id: 'archived-project',
+      slug: 'archived',
+      name: 'Archived Project',
+      archivedAt: Date.now(),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }))
+    ;(sm as unknown as { sendMessage: unknown }).sendMessage = async () => {}
+
+    await expect(sm.executePromptAutomation({
+      workspaceId: 'ws_test',
+      workspaceRootPath: tmpRoot,
+      projectId: 'archived-project',
+      prompt: 'do not run archived work',
+    })).rejects.toThrow('is archived')
   })
 })

@@ -942,7 +942,7 @@ function AppShellContent({
   const {
     automations, automationTestResults,
     automationPendingDelete, pendingDeleteAutomation, setAutomationPendingDelete,
-    handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, confirmDeleteAutomation,
+    handleTestAutomation, handleToggleAutomation, handleSetAutomationProject, handleDuplicateAutomation, handleDeleteAutomation, confirmDeleteAutomation,
     getAutomationHistory, handleReplayAutomation,
   } = useAutomations(activeWorkspaceId)
 
@@ -1731,12 +1731,13 @@ function AppShellContent({
     onChatMatchInfoChange: handleChatMatchInfoChange,
     onTestAutomation: handleTestAutomation,
     onToggleAutomation: handleToggleAutomation,
+    onSetAutomationProject: handleSetAutomationProject,
     onDuplicateAutomation: handleDuplicateAutomation,
     onDeleteAutomation: handleDeleteAutomation,
     automationTestResults,
     getAutomationHistory,
     onReplayAutomation: handleReplayAutomation,
-  }), [contextValue, handleDeleteSession, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, handleJumpToTaskSessions, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
+  }), [contextValue, handleDeleteSession, sources, skills, activeSessionWorkingDirectory, displayLabelConfigs, handleSessionLabelsChange, enabledModes, effectiveSessionStatuses, handleSessionSourcesChange, handleJumpToTaskSessions, isAutoCompact, searchActive, searchQuery, handleChatMatchInfoChange, handleTestAutomation, handleToggleAutomation, handleSetAutomationProject, handleDuplicateAutomation, handleDeleteAutomation, automationTestResults, getAutomationHistory, handleReplayAutomation])
 
   // Persist expanded folders to localStorage (workspace-scoped)
   React.useEffect(() => {

@@ -1693,6 +1693,7 @@ export class SessionManager implements ISessionManager {
                 workspaceRootPath,
                 prompt: pending.prompt,
                 labels: pending.labels,
+                projectId: pending.projectId,
                 permissionMode: pending.permissionMode,
                 mentions: pending.mentions,
                 llmConnection: pending.llmConnection,
@@ -8377,6 +8378,7 @@ export class SessionManager implements ISessionManager {
       workspaceRootPath,
       prompt,
       labels,
+      projectId,
       permissionMode,
       mentions,
       llmConnection,
@@ -8395,8 +8397,27 @@ export class SessionManager implements ISessionManager {
       }
     }
 
-    // Resolve @mentions to source/skill slugs
-    const resolved = mentions ? this.resolveAutomationMentions(workspaceRootPath, mentions) : undefined
+    // Resolve the optional Project before mentions or session creation. A stale
+    // binding must fail closed: silently running from the workspace default could
+    // make an automation edit the wrong repository.
+    let projectRootPath: string | undefined
+    if (projectId) {
+      const { loadProjectById } = await import('@craft-agent/shared/projects')
+      const project = loadProjectById(workspaceRootPath, projectId)
+      if (!project) {
+        throw new Error(`Automation project ${projectId} not found in workspace ${workspaceId}`)
+      }
+      if (project.config.archivedAt) {
+        throw new Error(`Automation project ${project.config.name} (${projectId}) is archived`)
+      }
+      projectRootPath = project.config.workingDirectory
+    }
+
+    // Resolve @mentions to source/skill slugs. Passing the Project root enables
+    // the existing global < workspace < project skill precedence for automations.
+    const resolved = mentions
+      ? this.resolveAutomationMentions(workspaceRootPath, mentions, projectRootPath)
+      : undefined
 
     // Ensure labels exist in workspace config before assigning to session
     const resolvedLabels = labels?.length
@@ -8411,6 +8432,7 @@ export class SessionManager implements ISessionManager {
     const session = await this.createSession(workspaceId, {
       name: sessionName,
       labels: resolvedLabels,
+      projectId,
       permissionMode: permissionMode || 'safe',
       enabledSourceSlugs: resolved?.sourceSlugs,
       llmConnection,
@@ -8477,9 +8499,13 @@ export class SessionManager implements ISessionManager {
   /**
    * Resolve @mentions in automation prompts to source and skill slugs
    */
-  private resolveAutomationMentions(workspaceRootPath: string, mentions: string[]): { sourceSlugs: string[]; skillSlugs: string[] } | undefined {
+  private resolveAutomationMentions(
+    workspaceRootPath: string,
+    mentions: string[],
+    projectRootPath?: string,
+  ): { sourceSlugs: string[]; skillSlugs: string[] } | undefined {
     const sources = loadWorkspaceSources(workspaceRootPath)
-    const skills = loadAllSkills(workspaceRootPath)
+    const skills = loadAllSkills(workspaceRootPath, projectRootPath)
     const sourceSlugs: string[] = []
     const skillSlugs: string[] = []
 

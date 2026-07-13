@@ -167,6 +167,8 @@ export interface AppShellContextType {
   onTestAutomation?: (automationId: string) => void
   /** Toggle an automation's enabled state by ID */
   onToggleAutomation?: (automationId: string) => void
+  /** Bind or unbind an automation's spawned sessions to a workspace Project. */
+  onSetAutomationProject?: (automationId: string, projectId: string | null) => void
   /** Duplicate an automation by ID — clones config with " Copy" suffix */
   onDuplicateAutomation?: (automationId: string) => void
   /** Delete an automation by ID — removes from automations config */

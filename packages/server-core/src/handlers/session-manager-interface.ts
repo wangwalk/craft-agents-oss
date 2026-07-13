@@ -296,6 +296,8 @@ export interface ExecutePromptAutomationInput {
   workspaceRootPath: string
   prompt: string
   labels?: string[]
+  /** Bind the spawned session to this workspace Project. */
+  projectId?: string
   permissionMode?: PermissionMode
   mentions?: string[]
   llmConnection?: string
