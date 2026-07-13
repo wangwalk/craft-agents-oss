@@ -1309,6 +1309,7 @@
   "skillsMarketplace.noResults": "Nincs egyező Skill",
   "skillsMarketplace.notInstalled": "Nincs telepítve",
   "skillsMarketplace.openOnSkillsSh": "Megnyitás a skills.sh-n",
+  "skillsMarketplace.remoteInstallRequiresUpdate": "A marketplace Skills telepítése előtt frissítse és indítsa újra a távoli munkaterület szerverét.",
   "skillsMarketplace.searchPlaceholder": "Keresés a skills.sh-n...",
   "skillsMarketplace.securityWarning": "A harmadik féltől származó Skills utasításokat és szkripteket tartalmazhatnak. Használat előtt ellenőrizze a tartalmat.",
   "skillsMarketplace.selectSkill": "Válasszon egy Skillt a marketplace-ből",

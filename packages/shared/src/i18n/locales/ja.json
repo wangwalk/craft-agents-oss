@@ -1309,6 +1309,7 @@
   "skillsMarketplace.noResults": "一致する Skills はありません",
   "skillsMarketplace.notInstalled": "未インストール",
   "skillsMarketplace.openOnSkillsSh": "skills.sh で開く",
+  "skillsMarketplace.remoteInstallRequiresUpdate": "マーケットプレイスの Skill をインストールする前に、リモートワークスペースサーバーを更新して再起動してください。",
   "skillsMarketplace.searchPlaceholder": "skills.sh を検索...",
   "skillsMarketplace.securityWarning": "サードパーティの Skills には、指示やスクリプトが含まれている場合があります。この Skill を使用する前に内容を確認してください。",
   "skillsMarketplace.selectSkill": "マーケットプレイスから Skill を選択",
