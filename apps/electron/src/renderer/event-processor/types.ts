@@ -166,16 +166,6 @@ export interface SessionStatusChangedEvent {
 }
 
 /**
- * Session metadata changed event — generic live push for programmatic metadata writes
- * (taskNodeCount, kanbanColumn) that don't ride the header-signature file-watch path.
- */
-export interface SessionMetadataChangedEvent {
-  type: 'session_metadata_changed'
-  sessionId: string
-  changes: Partial<Pick<Session, 'taskNodeCount' | 'kanbanColumn' | 'taskDraft' | 'taskSlug' | 'projectId'>>
-}
-
-/**
  * Session flagged/unflagged events (external metadata change)
  */
 export interface SessionFlaggedEvent {
@@ -528,7 +518,6 @@ export type AgentEvent =
   | LabelsChangedEvent
   | ProjectIdChangedEvent
   | SessionStatusChangedEvent
-  | SessionMetadataChangedEvent
   | SessionFlaggedEvent
   | SessionUnflaggedEvent
   | SessionArchivedEvent
