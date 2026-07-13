@@ -181,6 +181,12 @@ export const routes = {
       return `skills/skill/${skillSlug}` as const
     },
 
+    /** skills.sh marketplace list or detail view. */
+    skillsMarketplace: (source?: string, skillId?: string) => {
+      if (!source || !skillId) return 'skills/marketplace' as const
+      return `skills/marketplace/${encodeURIComponent(source)}/${encodeURIComponent(skillId)}` as const
+    },
+
     /** Automations view (automations navigator) - supports type filtering */
     automations: (params?: { automationId?: string; type?: 'scheduled' | 'event' | 'agentic' }) => {
       const { automationId, type } = params ?? {}

@@ -61,7 +61,22 @@ export type { LoadedSource, FolderSourceConfig, SourceConnectionStatus, SourceTy
 
 // Skill types
 import type { LoadedSkill, SkillMetadata } from '@craft-agent/shared/skills/types';
-export type { LoadedSkill, SkillMetadata };
+import type {
+  MarketplaceInstallResult,
+  MarketplaceSkillDetail,
+  MarketplaceSkillSummary,
+  MarketplaceSkillsPage,
+  SkillsMarketplaceView,
+} from '@craft-agent/shared/skills';
+export type {
+  LoadedSkill,
+  SkillMetadata,
+  MarketplaceInstallResult,
+  MarketplaceSkillDetail,
+  MarketplaceSkillSummary,
+  MarketplaceSkillsPage,
+  SkillsMarketplaceView,
+};
 
 // Resource bundle types (cross-workspace export/import)
 import type { ExportResourcesOptions, ExportResult, ResourceImportMode, ResourceBundle, ResourceImportResult } from '@craft-agent/shared/resources';
@@ -482,6 +497,10 @@ export interface ElectronAPI {
   deleteSkill(workspaceId: string, skillSlug: string): Promise<void>
   openSkillInEditor(workspaceId: string, skillSlug: string): Promise<void>
   openSkillInFinder(workspaceId: string, skillSlug: string): Promise<void>
+  listMarketplaceSkills(view: SkillsMarketplaceView, page?: number): Promise<MarketplaceSkillsPage>
+  searchMarketplaceSkills(query: string): Promise<MarketplaceSkillSummary[]>
+  getMarketplaceSkillDetail(source: string, skillId: string, name: string, installs: number): Promise<MarketplaceSkillDetail>
+  installMarketplaceSkill(workspaceId: string, source: string, skillId: string, workingDirectory?: string): Promise<MarketplaceInstallResult>
 
   // Skills change listener (live updates when skills are added/removed/modified)
   onSkillsChanged(callback: (workspaceId: string, skills: LoadedSkill[]) => void): () => void
@@ -879,7 +898,11 @@ export interface SettingsNavigationState {
  */
 export interface SkillsNavigationState {
   navigator: 'skills'
-  details: { type: 'skill'; skillSlug: string } | null
+  section?: 'installed' | 'marketplace'
+  details:
+    | { type: 'skill'; skillSlug: string }
+    | { type: 'marketplace-skill'; source: string; skillId: string }
+    | null
   rightSidebar?: RightSidebarPanel
 }
 
@@ -971,7 +994,10 @@ export const getNavigationStateKey = (state: NavigationState): string => {
     if (state.details?.type === 'skill') {
       return `skills/skill/${state.details.skillSlug}`
     }
-    return 'skills'
+    if (state.details?.type === 'marketplace-skill') {
+      return `skills/marketplace/${encodeURIComponent(state.details.source)}/${encodeURIComponent(state.details.skillId)}`
+    }
+    return state.section === 'marketplace' ? 'skills/marketplace' : 'skills'
   }
   if (state.navigator === 'automations') {
     if (state.details?.type === 'automation') {
@@ -1059,13 +1085,25 @@ export const parseNavigationStateKey = (key: string): NavigationState | null => 
   }
 
   // Handle skills
-  if (key === 'skills') return { navigator: 'skills', details: null }
+  if (key === 'skills') return { navigator: 'skills', section: 'installed', details: null }
+  if (key === 'skills/marketplace') return { navigator: 'skills', section: 'marketplace', details: null }
+  if (key.startsWith('skills/marketplace/')) {
+    const [source, skillId] = key.slice('skills/marketplace/'.length).split('/')
+    if (source && skillId) {
+      return {
+        navigator: 'skills',
+        section: 'marketplace',
+        details: { type: 'marketplace-skill', source: decodeURIComponent(source), skillId: decodeURIComponent(skillId) },
+      }
+    }
+    return { navigator: 'skills', section: 'marketplace', details: null }
+  }
   if (key.startsWith('skills/skill/')) {
     const skillSlug = key.slice(13)
     if (skillSlug) {
-      return { navigator: 'skills', details: { type: 'skill', skillSlug } }
+      return { navigator: 'skills', section: 'installed', details: { type: 'skill', skillSlug } }
     }
-    return { navigator: 'skills', details: null }
+    return { navigator: 'skills', section: 'installed', details: null }
   }
 
   // Handle automations

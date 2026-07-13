@@ -34,6 +34,8 @@ import {
   MailOpen,
   Plug,
   FolderKanban,
+  Store,
+  PackageCheck,
 } from "lucide-react"
 // SessionStatusIcons no longer used - icons come from dynamic sessionStatuses
 import { SourceAvatar } from "@/components/ui/source-avatar"
@@ -88,7 +90,7 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, PermissionMode, SourceFilter, SourceCollectionFilterType, AutomationFilter, OpenConnectorSection } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, MarketplaceSkillSummary, PermissionMode, SourceFilter, SourceCollectionFilterType, AutomationFilter, OpenConnectorSection } from "../../../shared/types"
 import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
 import { openConnectorProviderItemsAtom } from "@/atoms/openconnector-sources"
@@ -126,6 +128,7 @@ import { SourcesListPanel } from "./SourcesListPanel"
 import { SourceTemplateDialog } from "./SourceTemplateDialog"
 import { buildOpenConnectorProviderItems, type OpenConnectorProviderItem } from "@/lib/openconnector"
 import { SkillsListPanel } from "./SkillsListPanel"
+import { SkillsMarketplacePanel } from "./SkillsMarketplacePanel"
 import { AutomationsListPanel } from "../automations/AutomationsListPanel"
 import { ProjectsListPanel } from "./ProjectsListPanel"
 import { APP_EVENTS, AGENT_EVENTS, type AutomationFilterKind, AUTOMATION_TYPE_TO_FILTER_KIND } from "../automations/types"
@@ -1158,6 +1161,11 @@ function AppShellContent({
     navigate(routes.view.skills(skill.slug))
   }, [activeWorkspaceId, navigate])
 
+  const handleMarketplaceSkillSelect = React.useCallback((skill: MarketplaceSkillSummary) => {
+    if (!activeWorkspaceId) return
+    navigate(routes.view.skillsMarketplace(skill.source, skill.skillId))
+  }, [activeWorkspaceId, navigate])
+
   // Handle selecting an automation from the list
   const handleAutomationSelect = React.useCallback((automationId: string) => {
     // Preserve current automation filter when selecting an automation
@@ -1801,6 +1809,10 @@ function AppShellContent({
     navigate(routes.view.skills())
   }, [])
 
+  const handleSkillsMarketplaceClick = useCallback(() => {
+    navigate(routes.view.skillsMarketplace())
+  }, [])
+
   // Handlers for automations view
   const handleAutomationsClick = useCallback(() => {
     navigate(routes.view.automations())
@@ -2104,12 +2116,14 @@ function AppShellContent({
     result.push({ id: 'nav:sources:local', type: 'nav', action: handleSourcesLocalClick })
     result.push({ id: 'nav:openconnector', type: 'nav', action: handleOpenConnectorClick })
     result.push({ id: 'nav:skills', type: 'nav', action: handleSkillsClick })
+    result.push({ id: 'nav:skills:installed', type: 'nav', action: handleSkillsClick })
+    result.push({ id: 'nav:skills:marketplace', type: 'nav', action: handleSkillsMarketplaceClick })
     result.push({ id: 'nav:automations', type: 'nav', action: handleAutomationsClick })
     result.push({ id: 'nav:settings', type: 'nav', action: () => handleSettingsClick() })
     result.push({ id: 'nav:whats-new', type: 'nav', action: handleWhatsNewClick })
 
     return result
-  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSourcesApiClick, handleSourcesMcpClick, handleSourcesLocalClick, handleOpenConnectorClick, handleSkillsClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
+  }, [handleAllSessionsClick, handleFlaggedClick, handleArchivedClick, handleLabelClick, labelConfigs, labelTree, viewConfigs, handleViewClick, handleSourcesClick, handleSourcesApiClick, handleSourcesMcpClick, handleSourcesLocalClick, handleOpenConnectorClick, handleSkillsClick, handleSkillsMarketplaceClick, handleAutomationsClick, handleSettingsClick, handleWhatsNewClick])
 
   // Toggle folder expanded state
   const handleToggleFolder = React.useCallback((path: string) => {
@@ -2562,6 +2576,26 @@ function AppShellContent({
                       icon: Zap,
                       variant: isSkillsNavigation(navState) ? "default" : "ghost",
                       onClick: handleSkillsClick,
+                      expandable: true,
+                      expanded: isExpanded('nav:skills'),
+                      onToggle: () => toggleExpanded('nav:skills'),
+                      items: [
+                        {
+                          id: 'nav:skills:installed',
+                          title: t('skillsMarketplace.installedTab'),
+                          label: String(skills.length),
+                          icon: PackageCheck,
+                          variant: isSkillsNavigation(navState) && navState.section !== 'marketplace' ? 'default' : 'ghost',
+                          onClick: handleSkillsClick,
+                        },
+                        {
+                          id: 'nav:skills:marketplace',
+                          title: t('skillsMarketplace.marketplaceTab'),
+                          icon: Store,
+                          variant: isSkillsNavigation(navState) && navState.section === 'marketplace' ? 'default' : 'ghost',
+                          onClick: handleSkillsMarketplaceClick,
+                        },
+                      ],
                       contextMenu: {
                         type: 'skills',
                         onAddSkill: openAddSkill,
@@ -3214,15 +3248,23 @@ function AppShellContent({
               />
             )}
             {isSkillsNavigation(navState) && activeWorkspaceId && (
-              /* Skills List */
-              <SkillsListPanel
-                skills={skills}
-                workspaceId={activeWorkspaceId}
-                workspaceRootPath={activeWorkspace?.rootPath}
-                onSkillClick={handleSkillSelect}
-                onDeleteSkill={handleDeleteSkill}
-                selectedSkillSlug={isSkillsNavigation(navState) && navState.details?.type === 'skill' ? navState.details.skillSlug : null}
-              />
+              navState.section === 'marketplace' ? (
+                <SkillsMarketplacePanel
+                  installedSkills={skills}
+                  selectedSource={navState.details?.type === 'marketplace-skill' ? navState.details.source : undefined}
+                  selectedSkillId={navState.details?.type === 'marketplace-skill' ? navState.details.skillId : undefined}
+                  onSkillClick={handleMarketplaceSkillSelect}
+                />
+              ) : (
+                <SkillsListPanel
+                  skills={skills}
+                  workspaceId={activeWorkspaceId}
+                  workspaceRootPath={activeWorkspace?.rootPath}
+                  onSkillClick={handleSkillSelect}
+                  onDeleteSkill={handleDeleteSkill}
+                  selectedSkillSlug={navState.details?.type === 'skill' ? navState.details.skillSlug : null}
+                />
+              )
             )}
             {isProjectsNavigation(navState) && activeWorkspaceId && (
               /* Projects List */
