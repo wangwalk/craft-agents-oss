@@ -1309,6 +1309,7 @@
   "skillsMarketplace.noResults": "Brak pasujących Skills",
   "skillsMarketplace.notInstalled": "Nie zainstalowano",
   "skillsMarketplace.openOnSkillsSh": "Otwórz na skills.sh",
+  "skillsMarketplace.remoteInstallRequiresUpdate": "Przed zainstalowaniem Skills z marketplace zaktualizuj i uruchom ponownie serwer zdalnego obszaru roboczego.",
   "skillsMarketplace.searchPlaceholder": "Szukaj w skills.sh...",
   "skillsMarketplace.securityWarning": "Skills firm trzecich mogą zawierać instrukcje i skrypty. Przejrzyj zawartość przed użyciem tego Skill.",
   "skillsMarketplace.selectSkill": "Wybierz Skill z marketplace",
