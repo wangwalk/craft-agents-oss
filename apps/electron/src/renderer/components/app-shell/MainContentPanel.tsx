@@ -44,7 +44,6 @@ import { getSettingsPageComponent } from '@/pages/settings/settings-pages'
 import { AutomationInfoPage } from '../automations/AutomationInfoPage'
 import ProjectInfoPage from '@/pages/ProjectInfoPage'
 import { OpenConnectorConsolePage } from '@/pages/openconnector/OpenConnectorConsolePage'
-import { KanbanBoardContainer } from './kanban/KanbanBoardContainer'
 import type { ExecutionEntry } from '../automations/types'
 import { automationsAtom } from '@/atoms/automations'
 import { SendResourceToWorkspaceDialog, type SendResourceType } from './SendResourceToWorkspaceDialog'
@@ -392,15 +391,6 @@ export function MainContentPanel({
 
   // Chats navigator - show chat, multi-select panel, or empty state
   if (isSessionsNavigation(navState)) {
-    // Board view: full-width Kanban over all sessions (placement independent of status)
-    if (navState.viewMode === 'board') {
-      return wrapWithStoplight(
-        <Panel variant="grow" className={className}>
-          <KanbanBoardContainer />
-        </Panel>
-      )
-    }
-
     // Multi-select mode: show batch actions panel
     if (isMultiSelectActive) {
       return wrapWithStoplight(

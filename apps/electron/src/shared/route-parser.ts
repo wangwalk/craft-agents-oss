@@ -47,8 +47,6 @@ export interface ParsedCompoundRoute {
   sourceFilter?: SourceFilter
   /** Automation filter (only for automations navigator) */
   automationFilter?: AutomationFilter
-  /** Sessions presentation mode (only for sessions navigator). 'board' = Kanban view. */
-  viewMode?: 'list' | 'board'
   /** Details page info (null for empty state) */
   details: {
     type: string
@@ -147,14 +145,11 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
 
   const first = segments[0]
 
-  // Kanban board — standalone route. A view of all sessions in board mode.
-  // Encoded as its own prefix (not `allSessions/board`) so it never collides
-  // with the positional `{filter}/session/{id}` detail parsing below.
+  // Legacy Board deep links degrade to the List-only All Sessions view.
   if (first === 'board') {
     return {
       navigator: 'sessions',
       sessionFilter: { kind: 'allSessions' },
-      viewMode: 'board',
       details: null,
     }
   }
@@ -435,9 +430,6 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
   }
 
   // Sessions navigator
-  // Board is a standalone view of all sessions; emit its own prefix.
-  if (parsed.viewMode === 'board') return 'board'
-
   let base: string
   const filter = parsed.sessionFilter
   if (!filter) return 'allSessions'
@@ -745,7 +737,6 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
   return {
     navigator: 'sessions',
     filter,
-    viewMode: compound.viewMode,
     details: null,
   }
 }
@@ -977,7 +968,6 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
   return {
     navigator: 'sessions',
     sessionFilter: state.filter,
-    viewMode: state.viewMode,
     details: state.details ? { type: 'session', id: state.details.sessionId } : null,
   }
 }

@@ -831,12 +831,6 @@ export interface SessionsNavigationState {
   filter: SessionFilter
   details: { type: 'session'; sessionId: string } | null
   rightSidebar?: RightSidebarPanel
-  /**
-   * Presentation mode for the sessions navigator. `'board'` renders the Kanban
-   * board (all sessions, grouped into To Do / In Progress / Done columns) in the
-   * content area instead of the list + chat. Absent/`'list'` is the default.
-   */
-  viewMode?: 'list' | 'board'
 }
 
 /**
