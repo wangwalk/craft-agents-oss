@@ -8,6 +8,7 @@ This file accumulates release notes for the next unreleased version. PRs that ad
 
 ## Improvements
 
+- **List-only personal workspace** — Session navigation now focuses exclusively on the List and chat workflow. The Kanban board, task editor surface, board appearance controls, and related playground demos have been removed, while legacy Board links safely fall back to All Sessions.
 - **Configure remote OpenConnector providers in Craft** — Provider pages now render secure API-key and custom-credential forms that proxy connection setup through the workspace server, so remote runtimes no longer require direct access to a VPS-local Web Console.
 
 ## Bug Fixes

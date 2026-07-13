@@ -35,6 +35,7 @@ const EXPECTED_CHANNELS: string[] = [
   'automations:getLastExecuted',
   'automations:replay',
   'automations:setEnabled',
+  'automations:setProject',
   'automations:test',
   'badge:draw',
   'badge:draw-windows',

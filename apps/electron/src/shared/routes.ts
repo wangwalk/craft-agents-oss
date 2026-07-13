@@ -212,9 +212,6 @@ export const routes = {
       projectSlug
         ? `projects/project/${projectSlug}` as const
         : 'projects' as const,
-
-    /** Kanban board view (sessions navigator, board view mode, all sessions) */
-    board: () => 'board' as const,
   },
 } as const
 
