@@ -234,6 +234,10 @@ export const CHANNEL_MAP = {
   deleteSkill: invoke(RPC_CHANNELS.skills.DELETE),
   openSkillInEditor: invoke(RPC_CHANNELS.skills.OPEN_EDITOR),
   openSkillInFinder: invoke(RPC_CHANNELS.skills.OPEN_FINDER),
+  listMarketplaceSkills: invoke(RPC_CHANNELS.skills.MARKETPLACE_LIST),
+  searchMarketplaceSkills: invoke(RPC_CHANNELS.skills.MARKETPLACE_SEARCH),
+  getMarketplaceSkillDetail: invoke(RPC_CHANNELS.skills.MARKETPLACE_DETAIL),
+  installMarketplaceSkill: invoke(RPC_CHANNELS.skills.MARKETPLACE_INSTALL),
   onSkillsChanged: listener(RPC_CHANNELS.skills.CHANGED),
 
   // Statuses

@@ -266,6 +266,10 @@ export const RPC_CHANNELS = {
     DELETE: 'skills:delete',
     OPEN_EDITOR: 'skills:openEditor',
     OPEN_FINDER: 'skills:openFinder',
+    MARKETPLACE_LIST: 'skills:marketplaceList',
+    MARKETPLACE_SEARCH: 'skills:marketplaceSearch',
+    MARKETPLACE_DETAIL: 'skills:marketplaceDetail',
+    MARKETPLACE_INSTALL: 'skills:marketplaceInstall',
     CHANGED: 'skills:changed',
   },
   statuses: {

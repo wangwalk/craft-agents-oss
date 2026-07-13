@@ -257,6 +257,20 @@ export function parseCompoundRoute(route: string): ParsedCompoundRoute | null {
       return { navigator: 'skills', details: null }
     }
 
+    // skills/marketplace[/{encodedSource}/{skillId}]
+    if (segments[1] === 'marketplace') {
+      if (!segments[2] || !segments[3]) {
+        return { navigator: 'skills', details: { type: 'marketplace', id: '' } }
+      }
+      return {
+        navigator: 'skills',
+        details: {
+          type: 'marketplace-skill',
+          id: `${decodeURIComponent(segments[2])}::${decodeURIComponent(segments[3])}`,
+        },
+      }
+    }
+
     // skills/skill/{skillSlug}
     if (segments[1] === 'skill' && segments[2]) {
       return {
@@ -411,6 +425,11 @@ export function buildCompoundRoute(parsed: ParsedCompoundRoute): string {
 
   if (parsed.navigator === 'skills') {
     if (!parsed.details) return 'skills'
+    if (parsed.details.type === 'marketplace') return 'skills/marketplace'
+    if (parsed.details.type === 'marketplace-skill') {
+      const [source, skillId] = parsed.details.id.split('::')
+      return `skills/marketplace/${encodeURIComponent(source ?? '')}/${encodeURIComponent(skillId ?? '')}`
+    }
     return `skills/skill/${parsed.details.id}`
   }
 
@@ -690,10 +709,25 @@ function convertCompoundToNavigationState(compound: ParsedCompoundRoute): Naviga
   // Skills
   if (compound.navigator === 'skills') {
     if (!compound.details) {
-      return { navigator: 'skills', details: null }
+      return { navigator: 'skills', section: 'installed', details: null }
+    }
+    if (compound.details.type === 'marketplace') {
+      return { navigator: 'skills', section: 'marketplace', details: null }
+    }
+    if (compound.details.type === 'marketplace-skill') {
+      const [source, skillId] = compound.details.id.split('::')
+      if (source && skillId) {
+        return {
+          navigator: 'skills',
+          section: 'marketplace',
+          details: { type: 'marketplace-skill', source, skillId },
+        }
+      }
+      return { navigator: 'skills', section: 'marketplace', details: null }
     }
     return {
       navigator: 'skills',
+      section: 'installed',
       details: { type: 'skill', skillSlug: compound.details.id },
     }
   }
@@ -943,6 +977,15 @@ function navigationStateToCompoundRoute(state: NavigationState): ParsedCompoundR
   }
 
   if (state.navigator === 'skills') {
+    if (state.details?.type === 'marketplace-skill') {
+      return {
+        navigator: 'skills',
+        details: { type: 'marketplace-skill', id: `${state.details.source}::${state.details.skillId}` },
+      }
+    }
+    if (state.section === 'marketplace') {
+      return { navigator: 'skills', details: { type: 'marketplace', id: '' } }
+    }
     return {
       navigator: 'skills',
       details: state.details?.type === 'skill' ? { type: 'skill', id: state.details.skillSlug } : null,

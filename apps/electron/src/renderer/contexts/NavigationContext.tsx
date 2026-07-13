@@ -668,8 +668,14 @@ export function NavigationProvider({
         return nextState
       }
 
-      // Skills: auto-select first skill
-      if (isSkillsNavigation(nextState) && !nextState.details && !options?.skipAutoSelect) {
+      // Installed Skills auto-select the first local skill. Marketplace list routes
+      // intentionally keep details empty until the user chooses a marketplace item.
+      if (
+        isSkillsNavigation(nextState) &&
+        nextState.section !== 'marketplace' &&
+        !nextState.details &&
+        !options?.skipAutoSelect
+      ) {
         const firstSkillSlug = getFirstSkillSlug()
         if (firstSkillSlug) {
           return { ...nextState, details: { type: 'skill', skillSlug: firstSkillSlug } }

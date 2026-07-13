@@ -11,6 +11,10 @@ export const HANDLED_CHANNELS = [
   RPC_CHANNELS.skills.DELETE,
   RPC_CHANNELS.skills.OPEN_EDITOR,
   RPC_CHANNELS.skills.OPEN_FINDER,
+  RPC_CHANNELS.skills.MARKETPLACE_LIST,
+  RPC_CHANNELS.skills.MARKETPLACE_SEARCH,
+  RPC_CHANNELS.skills.MARKETPLACE_DETAIL,
+  RPC_CHANNELS.skills.MARKETPLACE_INSTALL,
 ] as const
 
 export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): void {
@@ -81,6 +85,44 @@ export function registerSkillsHandlers(server: RpcServer, deps: HandlerDeps): vo
 
     return scanDirectory(skillDir)
   })
+
+  // Browse the skills.sh marketplace. These handlers intentionally live in
+  // server-core so remote workspaces use the remote server's network/filesystem.
+  server.handle(RPC_CHANNELS.skills.MARKETPLACE_LIST, async (_ctx, view: 'all-time' | 'trending' | 'hot', page = 0) => {
+    const { listMarketplaceSkills } = await import('@craft-agent/shared/skills')
+    return listMarketplaceSkills(view, page)
+  })
+
+  server.handle(RPC_CHANNELS.skills.MARKETPLACE_SEARCH, async (_ctx, query: string) => {
+    const { searchMarketplaceSkills } = await import('@craft-agent/shared/skills')
+    return searchMarketplaceSkills(query)
+  })
+
+  server.handle(
+    RPC_CHANNELS.skills.MARKETPLACE_DETAIL,
+    async (_ctx, source: string, skillId: string, name: string, installs: number) => {
+      const { getMarketplaceSkillDetail } = await import('@craft-agent/shared/skills')
+      return getMarketplaceSkillDetail({ source, skillId, name, installs })
+    },
+  )
+
+  server.handle(
+    RPC_CHANNELS.skills.MARKETPLACE_INSTALL,
+    async (_ctx, workspaceId: string, source: string, skillId: string, workingDirectory?: string) => {
+      const workspace = getWorkspaceByNameOrId(workspaceId)
+      if (!workspace) throw new Error('Workspace not found')
+      const effectiveWorkingDir = workingDirectory && existsSync(workingDirectory)
+        ? workingDirectory
+        : undefined
+      const { installMarketplaceSkill } = await import('@craft-agent/shared/skills')
+      const result = await installMarketplaceSkill(workspace.rootPath, source, skillId, {
+        projectRoot: effectiveWorkingDir,
+      })
+      deps.sessionManager.notifyConfigFileChange(workspace.rootPath, `skills/${result.slug}/SKILL.md`)
+      deps.platform.logger?.info(`Installed skills.sh skill: ${source}/${skillId}`)
+      return result
+    },
+  )
 
   // Delete a skill from a workspace
   server.handle(RPC_CHANNELS.skills.DELETE, async (_ctx, workspaceId: string, skillSlug: string) => {

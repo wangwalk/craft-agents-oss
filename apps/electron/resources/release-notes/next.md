@@ -4,6 +4,7 @@ This file accumulates release notes for the next unreleased version. PRs that ad
 
 ## Features
 
+- **Browse and install Skills from skills.sh** — Skills now include a native marketplace with all-time, trending, and hot rankings, keyword search, instruction and file previews, and secure one-click workspace installation. Downloads are validated for path safety and Skill format, installed atomically, and work through the same RPC flow for local and remote workspaces.
 - **Bind Automations to Projects** — Prompt Automations can now target a workspace Project, so spawned sessions inherit its working directory, context, memory, and project-level Skills. Stale or archived bindings fail safely instead of running in the workspace default directory.
 
 ## Improvements
