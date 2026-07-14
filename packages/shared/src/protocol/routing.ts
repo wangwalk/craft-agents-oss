@@ -59,13 +59,6 @@ export const LOCAL_ONLY_CHANNELS = new Set<string>([
   RPC_CHANNELS.shell.OPEN_FILE,
   RPC_CHANNELS.shell.SHOW_IN_FOLDER,
 
-  // skills.sh marketplace reads are public and workspace-independent. Keep
-  // them local so browsing remote workspaces does not depend on the remote
-  // server running the exact same Craft Agent version.
-  RPC_CHANNELS.skills.MARKETPLACE_LIST,
-  RPC_CHANNELS.skills.MARKETPLACE_SEARCH,
-  RPC_CHANNELS.skills.MARKETPLACE_DETAIL,
-
   // skills — local filesystem actions (guarded for remote)
   RPC_CHANNELS.skills.OPEN_EDITOR,
   RPC_CHANNELS.skills.OPEN_FINDER,
@@ -378,7 +371,9 @@ export const REMOTE_ELIGIBLE_CHANNELS = new Set<string>([
   RPC_CHANNELS.skills.GET,
   RPC_CHANNELS.skills.GET_FILES,
   RPC_CHANNELS.skills.DELETE,
-  // Installation writes into the workspace and must run on its owning server.
+  RPC_CHANNELS.skills.MARKETPLACE_LIST,
+  RPC_CHANNELS.skills.MARKETPLACE_SEARCH,
+  RPC_CHANNELS.skills.MARKETPLACE_DETAIL,
   RPC_CHANNELS.skills.MARKETPLACE_INSTALL,
   RPC_CHANNELS.skills.CHANGED,
 

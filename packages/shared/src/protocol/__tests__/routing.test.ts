@@ -68,11 +68,4 @@ describe('channel routing behavior', () => {
       }
     }
   })
-
-  test('skills marketplace reads stay local while installation follows the workspace', () => {
-    expect(LOCAL_ONLY_CHANNELS.has(RPC_CHANNELS.skills.MARKETPLACE_LIST)).toBe(true)
-    expect(LOCAL_ONLY_CHANNELS.has(RPC_CHANNELS.skills.MARKETPLACE_SEARCH)).toBe(true)
-    expect(LOCAL_ONLY_CHANNELS.has(RPC_CHANNELS.skills.MARKETPLACE_DETAIL)).toBe(true)
-    expect(REMOTE_ELIGIBLE_CHANNELS.has(RPC_CHANNELS.skills.MARKETPLACE_INSTALL)).toBe(true)
-  })
 })

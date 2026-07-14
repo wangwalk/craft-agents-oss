@@ -100,13 +100,8 @@ export default function SkillsMarketplaceDetailPage({
       toast.success(t('skillsMarketplace.installSuccess', { name: summary?.name ?? skillId }))
       navigate(routes.view.skills(skillId))
     } catch (err) {
-      const message = err instanceof Error ? err.message : ''
-      const remoteServerNeedsUpdate = message.includes('No handler for: skills:marketplaceInstall')
-        || message.includes('CHANNEL_NOT_FOUND')
       toast.error(t('skillsMarketplace.installFailed'), {
-        description: remoteServerNeedsUpdate
-          ? t('skillsMarketplace.remoteInstallRequiresUpdate')
-          : message || undefined,
+        description: err instanceof Error ? err.message : undefined,
       })
     } finally {
       setInstalling(false)

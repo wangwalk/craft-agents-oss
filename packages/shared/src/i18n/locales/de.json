@@ -1309,7 +1309,6 @@
   "skillsMarketplace.noResults": "Keine passenden Skills",
   "skillsMarketplace.notInstalled": "Nicht installiert",
   "skillsMarketplace.openOnSkillsSh": "Auf skills.sh öffnen",
-  "skillsMarketplace.remoteInstallRequiresUpdate": "Aktualisieren und starten Sie den Remote-Workspace-Server neu, bevor Sie Marketplace-Skills installieren.",
   "skillsMarketplace.searchPlaceholder": "skills.sh durchsuchen...",
   "skillsMarketplace.securityWarning": "Drittanbieter-Skills können Anweisungen und Skripte enthalten. Prüfen Sie den Inhalt, bevor Sie diesen Skill verwenden.",
   "skillsMarketplace.selectSkill": "Wählen Sie einen Skill aus dem Marktplatz aus",

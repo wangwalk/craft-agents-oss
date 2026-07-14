@@ -1309,7 +1309,6 @@
   "skillsMarketplace.noResults": "没有匹配的 Skills",
   "skillsMarketplace.notInstalled": "未安装",
   "skillsMarketplace.openOnSkillsSh": "在 skills.sh 上打开",
-  "skillsMarketplace.remoteInstallRequiresUpdate": "安装市场 Skill 前，请更新并重启远程工作区服务。",
   "skillsMarketplace.searchPlaceholder": "搜索 skills.sh...",
   "skillsMarketplace.securityWarning": "第三方 Skills 可能包含指令和脚本。使用此 Skill 前请先查看内容。",
   "skillsMarketplace.selectSkill": "从市场中选择一个 Skill",
