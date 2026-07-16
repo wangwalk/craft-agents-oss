@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { BrowserWindow, WebContentsView, ipcMain, shell } from 'electron'
 import type { WebContents } from 'electron'
 import { mainLog } from './logger'
@@ -9,6 +10,7 @@ import {
   type OpenConnectorConsoleViewResult,
 } from '../shared/types'
 import {
+  classifyOpenConnectorOAuthSession,
   classifyOpenConnectorPopup,
   isSameOpenConnectorOrigin,
   normalizeOpenConnectorConsoleBounds,
@@ -173,7 +175,10 @@ export class OpenConnectorConsoleViewManager {
             height: 720,
             autoHideMenuBar: true,
             webPreferences: {
-              partition: CONSOLE_PARTITION,
+              partition:
+                classifyOpenConnectorOAuthSession(details.url) === 'fresh'
+                  ? `openconnector-oauth-${randomUUID()}`
+                  : CONSOLE_PARTITION,
               sandbox: true,
               contextIsolation: true,
               nodeIntegration: false,

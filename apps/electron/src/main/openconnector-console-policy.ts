@@ -11,8 +11,10 @@ export interface ResolvedOpenConnectorConsoleUrl {
 }
 
 export type OpenConnectorPopupDisposition = 'oauth-popup' | 'external' | 'blocked'
+export type OpenConnectorOAuthSessionKind = 'fresh' | 'persistent'
 
 const MAX_VIEW_DIMENSION = 20_000
+const FRESH_OAUTH_SESSION_HASH = '#oomol-connect-fresh-session'
 
 export function resolveOpenConnectorConsoleUrl(value: unknown): ResolvedOpenConnectorConsoleUrl | null {
   if (typeof value !== 'string' || !value.trim()) return null
@@ -51,6 +53,11 @@ export function isSameOpenConnectorOrigin(value: string, allowedOrigin: string):
   } catch {
     return false
   }
+}
+
+export function classifyOpenConnectorOAuthSession(value: string): OpenConnectorOAuthSessionKind {
+  const resolved = resolveExternalHttpUrl(value)
+  return resolved?.hash === FRESH_OAUTH_SESSION_HASH ? 'fresh' : 'persistent'
 }
 
 export function classifyOpenConnectorPopup(
