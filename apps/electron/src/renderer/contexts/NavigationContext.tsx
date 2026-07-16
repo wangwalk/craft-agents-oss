@@ -76,8 +76,8 @@ import {
 } from '../../shared/types'
 import { sessionMetaMapAtom, updateSessionMetaAtom, type SessionMeta } from '@/atoms/sessions'
 import { sourcesAtom } from '@/atoms/sources'
-import { openConnectorProviderItemsAtom } from '@/atoms/openconnector-sources'
 import { skillsAtom } from '@/atoms/skills'
+import { isOpenConnectorGatewaySource } from '@craft-agent/shared/connectors/openconnector'
 import {
   panelStackAtom,
   pushPanelAtom,
@@ -182,7 +182,6 @@ export function NavigationProvider({
 
   // Read sources from atom (populated by AppShell)
   const sources = useAtomValue(sourcesAtom)
-  const openConnectorProviderItems = useAtomValue(openConnectorProviderItemsAtom)
 
   // Read skills from atom (populated by AppShell)
   const skills = useAtomValue(skillsAtom)
@@ -596,16 +595,17 @@ export function NavigationProvider({
 
   const getFirstSourceSlug = useCallback(
     (filter?: SourceFilter | null): string | null => {
+      const visibleSources = sources.filter((source) => !isOpenConnectorGatewaySource(source.config))
       if (!filter) {
-        return sources[0]?.config.slug ?? null
+        return visibleSources[0]?.config.slug ?? null
       }
       if (filter.sourceType === 'openconnector') {
-        return openConnectorProviderItems[0]?.id ?? null
+        return null
       }
-      const filtered = sources.filter(s => s.config.type === filter.sourceType)
+      const filtered = visibleSources.filter(s => s.config.type === filter.sourceType)
       return filtered[0]?.config.slug ?? null
     },
-    [sources, openConnectorProviderItems]
+    [sources]
   )
 
   const getFirstSkillSlug = useCallback(

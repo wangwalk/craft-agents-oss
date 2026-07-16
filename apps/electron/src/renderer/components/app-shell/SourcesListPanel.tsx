@@ -11,9 +11,6 @@ import { SourceMenu } from './SourceMenu'
 import { SendResourceToWorkspaceDialog } from './SendResourceToWorkspaceDialog'
 import { useAppShellContext } from '@/context/AppShellContext'
 import { EditPopover, getEditConfig, type EditContextKey } from '@/components/ui/EditPopover'
-import { openConnectorProviderItemsAtom } from '@/atoms/openconnector-sources'
-import { useAtomValue } from 'jotai'
-import type { OpenConnectorProviderItem } from '@/lib/openconnector'
 import { isOpenConnectorGatewaySource } from '@craft-agent/shared/connectors/openconnector'
 import type { LoadedSource, SourceFilter } from '../../../shared/types'
 
@@ -38,9 +35,7 @@ const SOURCE_TYPE_FILTER_LABEL_KEYS: Record<string, string> = {
   openconnector: 'sourcesList.filterOpenConnector',
 }
 
-type SourcesListItem =
-  | { kind: 'source'; id: string; source: LoadedSource }
-  | { kind: 'openconnector'; id: string; provider: OpenConnectorProviderItem }
+type SourcesListItem = { kind: 'source'; id: string; source: LoadedSource }
 
 export interface SourcesListPanelProps {
   sources: LoadedSource[]
@@ -67,9 +62,7 @@ export function SourcesListPanel({
 }: SourcesListPanelProps) {
   const { t } = useTranslation()
   const { workspaces, activeWorkspaceId } = useAppShellContext()
-  const openConnectorItems = useAtomValue(openConnectorProviderItemsAtom)
   const hasOtherWorkspaces = workspaces.length > 1
-  const { clearMultiSelect } = sourceSelection.useSelection()
 
   // Send to Workspace dialog state
   const [sendDialogOpen, setSendDialogOpen] = React.useState(false)
@@ -77,14 +70,6 @@ export function SourcesListPanel({
   const [sendResourceLabel, setSendResourceLabel] = React.useState('')
 
   const filteredItems = React.useMemo<SourcesListItem[]>(() => {
-    if (sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'openconnector') {
-      return openConnectorItems.map((item) => ({
-        kind: 'openconnector',
-        id: item.id,
-        provider: item,
-      }))
-    }
-
     const visibleSources = sources.filter((source) => !isOpenConnectorGatewaySource(source.config))
     const filteredSources = !sourceFilter
       ? visibleSources
@@ -95,13 +80,7 @@ export function SourcesListPanel({
       id: source.config.slug,
       source,
     }))
-  }, [openConnectorItems, sourceFilter, sources])
-
-  React.useEffect(() => {
-    if (sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'openconnector') {
-      clearMultiSelect()
-    }
-  }, [clearMultiSelect, sourceFilter])
+  }, [sourceFilter, sources])
 
   const emptyMessage = React.useMemo(() => {
     if (sourceFilter?.kind === 'type') {
@@ -121,7 +100,7 @@ export function SourcesListPanel({
       selectedId={selectedSourceSlug}
       onItemClick={(item) => onSourceClick(item.id)}
       className={className}
-      multiSelect={!(sourceFilter?.kind === 'type' && sourceFilter.sourceType === 'openconnector')}
+      multiSelect
       containerProps={{ 'data-list-role': 'sources' }}
       emptyState={
         <EntityListEmptyScreen
@@ -158,38 +137,6 @@ export function SourcesListPanel({
         </EntityListEmptyScreen>
       }
       mapItem={(item) => {
-        if (item.kind === 'openconnector') {
-          const { provider } = item
-          const connectionStatus = deriveConnectionStatus(provider.source, localMcpEnabled)
-          const statusConfig = SOURCE_STATUS_CONFIG[connectionStatus]
-          return {
-            icon: (
-              <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-foreground/[0.05] text-lg">
-                {provider.providerApp.icon}
-              </div>
-            ),
-            title: provider.providerApp.name,
-            badges: (
-              <>
-                <EntityListBadge colorClass="bg-accent/10 text-accent">{t('sourcesList.typeOpenConnectorApp')}</EntityListBadge>
-                {statusConfig && (
-                  <EntityListBadge colorClass={statusConfig.colorClass} tooltip={provider.source.config.connectionError || undefined} className="cursor-default">
-                    {t(statusConfig.labelKey)}
-                  </EntityListBadge>
-                )}
-                <span className="truncate">
-                  {provider.providerApp.tagline}
-                </span>
-              </>
-            ),
-            trailing: (
-              <span className="truncate text-xs text-muted-foreground">
-                {t('sourceInfo.openConnectorActionCount', { count: provider.actionCount })}
-              </span>
-            ),
-          }
-        }
-
         const source = item.source
         const connectionStatus = deriveConnectionStatus(source, localMcpEnabled)
         const typeConfig = SOURCE_TYPE_CONFIG[source.config.type]

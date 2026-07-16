@@ -107,6 +107,31 @@ export const BROWSER_TOOLBAR_CHANNELS = {
   THEME_COLOR: 'browser-toolbar:theme-color',
 } as const
 
+/** Local-only IPC channels for the official OpenConnector console WebContentsView. */
+export const OPENCONNECTOR_CONSOLE_IPC = {
+  SHOW: '__openconnector-console:show',
+  UPDATE_BOUNDS: '__openconnector-console:updateBounds',
+  HIDE: '__openconnector-console:hide',
+  DESTROY: '__openconnector-console:destroy',
+} as const
+
+export interface OpenConnectorConsoleViewBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface OpenConnectorConsoleShowRequest {
+  url: string
+  bounds: OpenConnectorConsoleViewBounds
+}
+
+export interface OpenConnectorConsoleViewResult {
+  success: boolean
+  error?: string
+}
+
 /** Tool icon mapping entry from tool-icons.json (with icon resolved to data URL) */
 export interface ToolIconMapping {
   id: string
@@ -310,6 +335,12 @@ export interface ElectronAPI {
   /** Show/hide macOS traffic light buttons (for fullscreen overlays) */
   setTrafficLightsVisible(visible: boolean): Promise<void>
 
+  // Official OpenConnector console (local Electron WebContentsView)
+  showOpenConnectorConsole(request: OpenConnectorConsoleShowRequest): Promise<OpenConnectorConsoleViewResult>
+  updateOpenConnectorConsoleBounds(bounds: OpenConnectorConsoleViewBounds): Promise<OpenConnectorConsoleViewResult>
+  hideOpenConnectorConsole(): Promise<OpenConnectorConsoleViewResult>
+  destroyOpenConnectorConsole(): Promise<OpenConnectorConsoleViewResult>
+
   // Event listeners
   onSessionEvent(callback: (event: SessionEvent) => void): () => void
   onUnreadSummaryChanged(callback: (summary: UnreadSummary) => void): () => void
@@ -474,9 +505,6 @@ export interface ElectronAPI {
   getWorkspacePermissionsConfig(workspaceId: string): Promise<import('@craft-agent/shared/agent').PermissionsConfigFile | null>
   getDefaultPermissionsConfig(): Promise<{ config: import('@craft-agent/shared/agent').PermissionsConfigFile | null; path: string }>
   getMcpTools(workspaceId: string, sourceSlug: string): Promise<McpToolsResult>
-  getOpenConnectorRuntimeJson(workspaceId: string, sourceSlug: string, path: string): Promise<{ success: boolean; data?: unknown; status?: number; error?: string }>
-  requestOpenConnectorRuntimeJson(workspaceId: string, sourceSlug: string, request: { method: 'POST' | 'PUT' | 'DELETE'; path: string; body?: unknown }): Promise<{ success: boolean; data?: unknown; status?: number; error?: string }>
-  getOpenConnectorRuntimeSnapshot(workspaceId: string, sourceSlug: string): Promise<import('@craft-agent/shared/connectors/openconnector').OpenConnectorRuntimeSnapshotRpcResult>
 
   // OAuth (server-owned credentials, client-orchestrated flow)
   performOAuth(args: { sourceSlug: string; sessionId?: string; authRequestId?: string }): Promise<{ success: boolean; error?: string; email?: string }>

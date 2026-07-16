@@ -36,7 +36,12 @@ import {
 import type { ConfirmDialogSpec, FileDialogSpec, BrowserCapabilityRequest } from '@craft-agent/server-core/transport'
 import type { RpcClient } from '@craft-agent/server-core/transport'
 import type { RemoteServerConfig } from '@craft-agent/core/types'
-import type { ElectronAPI } from '../shared/types'
+import {
+  OPENCONNECTOR_CONSOLE_IPC,
+  type ElectronAPI,
+  type OpenConnectorConsoleShowRequest,
+  type OpenConnectorConsoleViewBounds,
+} from '../shared/types'
 
 // ---------------------------------------------------------------------------
 // Client interface — common surface for both RoutedClient and WsRpcClient
@@ -192,6 +197,18 @@ client.handleCapability(CLIENT_BROWSER_INVOKE, async (req: BrowserCapabilityRequ
 const api = buildClientApi(client, CHANNEL_MAP, (ch) => client.isChannelAvailable(ch))
 
 ;(api as any).getRuntimeEnvironment = (): 'electron' | 'web' => 'electron'
+
+// Official OpenConnector console is a local Electron capability. It must not
+// route through the remote workspace RPC server because the WebContentsView is
+// owned by this desktop process and its parent BrowserWindow.
+;(api as any).showOpenConnectorConsole = (request: OpenConnectorConsoleShowRequest) =>
+  ipcRenderer.invoke(OPENCONNECTOR_CONSOLE_IPC.SHOW, request)
+;(api as any).updateOpenConnectorConsoleBounds = (bounds: OpenConnectorConsoleViewBounds) =>
+  ipcRenderer.invoke(OPENCONNECTOR_CONSOLE_IPC.UPDATE_BOUNDS, bounds)
+;(api as any).hideOpenConnectorConsole = () =>
+  ipcRenderer.invoke(OPENCONNECTOR_CONSOLE_IPC.HIDE)
+;(api as any).destroyOpenConnectorConsole = () =>
+  ipcRenderer.invoke(OPENCONNECTOR_CONSOLE_IPC.DESTROY)
 
 // ---------------------------------------------------------------------------
 // Transport connection state logging (for remote connections)

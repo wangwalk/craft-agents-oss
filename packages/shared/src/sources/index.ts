@@ -101,7 +101,6 @@ export {
 export {
   OPENCONNECTOR_TEMPLATE_ID,
   DEFAULT_OPENCONNECTOR_MCP_URL,
-  OPENCONNECTOR_PROVIDER_APPS,
   SOURCE_TEMPLATES,
   getSourceTemplates,
   getSourceTemplate,
@@ -109,7 +108,6 @@ export {
   isOpenConnectorGatewaySource,
   isOpenConnectorSource,
   normalizeOpenConnectorMcpUrl,
-  inferOpenConnectorProviderIdsFromToolNames,
   getOpenConnectorGuide,
 } from './source-templates.ts';
 export type {
@@ -117,7 +115,6 @@ export type {
   SourceTemplateSetupField,
   SourceTemplateSetupMode,
   BuildSourceTemplateInput,
-  OpenConnectorProviderApp,
 } from './source-templates.ts';
 
 // API Tools (types)

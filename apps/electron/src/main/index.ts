@@ -109,6 +109,7 @@ import { initializeBackendHostRuntime } from '@craft-agent/shared/agent/backend'
 import { setPowerShellValidatorRoot } from '@craft-agent/shared/agent'
 import { handleDeepLink } from './deep-link'
 import { BrowserPaneManager } from './browser-pane-manager'
+import { OpenConnectorConsoleViewManager } from './openconnector-console-view-manager'
 import { OAuthFlowStore } from '@craft-agent/shared/auth'
 import { registerThumbnailScheme, registerThumbnailHandler } from './thumbnail-protocol'
 import log, { isDebugMode, mainLog, getLogFilePath, getMessagingGatewayLogFilePath, messagingGatewayLog, autoUpdateLog } from './logger'
@@ -210,6 +211,7 @@ const DEEPLINK_SCHEME = process.env.CRAFT_DEEPLINK_SCHEME || 'craftagents'
 let windowManager: WindowManager | null = null
 let sessionManager: SessionManager | null = null
 let browserPaneManager: BrowserPaneManager | null = null
+let openConnectorConsoleViewManager: OpenConnectorConsoleViewManager | null = null
 let oauthFlowStore: OAuthFlowStore | null = null
 let moduleSink: EventSink | null = null
 let moduleClientResolver: ((webContentsId: number) => string | undefined) | null = null
@@ -477,6 +479,11 @@ app.whenReady().then(async () => {
     browserPaneManager.setWindowManager(windowManager)
     browserPaneManager.registerToolbarIpc()
     browserPaneManager.registerCapabilityIpc()
+
+    // Official OpenConnector console runs in a local native view even when this
+    // Electron instance is a thin client connected to a remote workspace server.
+    openConnectorConsoleViewManager = new OpenConnectorConsoleViewManager(windowManager)
+    openConnectorConsoleViewManager.registerIpc()
 
     // Build real PlatformServices from Electron APIs
     const platform: PlatformServices = createElectronPlatform({
@@ -1203,6 +1210,10 @@ app.on('before-quit', async (event) => {
       mainLog.info('[update-flow] before-quit save', beforeQuitSave)
     }
   }
+
+  // Native Console views and their IPC handlers are local in both full and
+  // thin-client modes, so dispose them independently of the server runtime.
+  openConnectorConsoleViewManager?.dispose()
 
   // Flush all pending session writes before quitting
   if (sessionManager) {

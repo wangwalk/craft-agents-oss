@@ -90,10 +90,9 @@ import { useFocusZone } from "@/hooks/keyboard"
 import { useFocusContext } from "@/context/FocusContext"
 import { getSessionTitle } from "@/utils/session"
 import { useSetAtom } from "jotai"
-import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, MarketplaceSkillSummary, PermissionMode, SourceFilter, SourceCollectionFilterType, AutomationFilter, OpenConnectorSection } from "../../../shared/types"
+import type { Session, Workspace, FileAttachment, PermissionRequest, LoadedSource, LoadedSkill, MarketplaceSkillSummary, PermissionMode, SourceFilter, SourceCollectionFilterType, AutomationFilter } from "../../../shared/types"
 import { sessionMetaMapAtom, sendToWorkspaceAtom, type SessionMeta } from "@/atoms/sessions"
 import { sourcesAtom } from "@/atoms/sources"
-import { openConnectorProviderItemsAtom } from "@/atoms/openconnector-sources"
 import { skillsAtom } from "@/atoms/skills"
 import { panelStackAtom, panelCountAtom, focusedPanelIdAtom, focusedSessionIdAtom, focusNextPanelAtom, focusPrevPanelAtom, parseSessionIdFromRoute } from "@/atoms/panel-stack"
 import { type SessionStatusId, type SessionStatus, statusConfigsToSessionStatuses } from "@/config/session-status-config"
@@ -123,10 +122,8 @@ import {
   type NavigationState,
 } from "@/contexts/NavigationContext"
 import type { SettingsSubpage } from "../../../shared/types"
-import { OpenConnectorListPanel } from "./OpenConnectorListPanel"
 import { SourcesListPanel } from "./SourcesListPanel"
 import { SourceTemplateDialog } from "./SourceTemplateDialog"
-import { buildOpenConnectorProviderItems, type OpenConnectorProviderItem } from "@/lib/openconnector"
 import { SkillsListPanel } from "./SkillsListPanel"
 import { SkillsMarketplacePanel } from "./SkillsMarketplacePanel"
 import { AutomationsListPanel } from "../automations/AutomationsListPanel"
@@ -885,16 +882,11 @@ function AppShellContent({
   }, [])
   // Sources state (workspace-scoped)
   const [sources, setSources] = React.useState<LoadedSource[]>([])
-  const [openConnectorNavItems, setOpenConnectorNavItems] = React.useState<OpenConnectorProviderItem[]>([])
-  // Sync sources/provider apps to atoms for NavigationContext auto-selection
+  // Sync sources to the atom used by navigation and the official console host.
   const setSourcesAtom = useSetAtom(sourcesAtom)
-  const setOpenConnectorProviderItems = useSetAtom(openConnectorProviderItemsAtom)
   React.useEffect(() => {
     setSourcesAtom(sources)
   }, [sources, setSourcesAtom])
-  React.useEffect(() => {
-    setOpenConnectorProviderItems(openConnectorNavItems)
-  }, [openConnectorNavItems, setOpenConnectorProviderItems])
 
   // Skills state (workspace-scoped)
   const [skills, setSkills] = React.useState<LoadedSkill[]>([])
@@ -1015,39 +1007,6 @@ function AppShellContent({
     return cleanup
   }, [activeWorkspaceId, activeRemoteWorkspaceId])
 
-  React.useEffect(() => {
-    if (!activeWorkspaceId) {
-      setOpenConnectorNavItems([])
-      return
-    }
-
-    const openConnectorSources = sources.filter((source) => isOpenConnectorGatewaySource(source.config))
-    if (openConnectorSources.length === 0) {
-      setOpenConnectorNavItems([])
-      return
-    }
-
-    let cancelled = false
-
-    void Promise.all(
-      openConnectorSources.map(async (source) => {
-        try {
-          const result = await window.electronAPI.getMcpTools(activeWorkspaceId, source.config.slug)
-          return buildOpenConnectorProviderItems(source, result.tools ?? [])
-        } catch {
-          return buildOpenConnectorProviderItems(source, [])
-        }
-      })
-    ).then((itemsBySource) => {
-      if (cancelled) return
-      setOpenConnectorNavItems(itemsBySource.flat())
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [activeWorkspaceId, sources])
-
   // Subscribe to live skill updates (when skills are added/removed dynamically)
   React.useEffect(() => {
     const cleanup = window.electronAPI.onSkillsChanged((workspaceId, updatedSkills) => {
@@ -1149,11 +1108,6 @@ function AppShellContent({
     if (!activeWorkspaceId) return
     navigateToSource(sourceId)
   }, [activeWorkspaceId, navigateToSource])
-
-  const handleOpenConnectorSectionSelect = React.useCallback((section: OpenConnectorSection) => {
-    if (!activeWorkspaceId) return
-    navigate(routes.view.openConnector({ section }))
-  }, [activeWorkspaceId, navigate])
 
   // Handle selecting a skill from the list
   const handleSkillSelect = React.useCallback((skill: LoadedSkill) => {
@@ -2560,7 +2514,6 @@ function AppShellContent({
                     {
                       id: "nav:openconnector",
                       title: t("sidebar.openConnector"),
-                      label: String(openConnectorNavItems.length),
                       icon: Plug,
                       variant: isOpenConnectorNavigation(navState) ? "default" : "ghost",
                       onClick: handleOpenConnectorClick,
@@ -3240,13 +3193,6 @@ function AppShellContent({
                 localMcpEnabled={localMcpEnabled}
               />
             )}
-            {isOpenConnectorNavigation(navState) && (
-              <OpenConnectorListPanel
-                selectedSection={navState.section}
-                onSectionClick={handleOpenConnectorSectionSelect}
-                onAddGateway={() => openAddSource('openconnector')}
-              />
-            )}
             {isSkillsNavigation(navState) && activeWorkspaceId && (
               navState.section === 'marketplace' ? (
                 <SkillsMarketplacePanel
@@ -3365,7 +3311,11 @@ function AppShellContent({
             )}
             </div>
           }
-          navigatorWidth={isAutoCompact ? sessionListWidth : (effectiveSidebarAndNavigatorHidden ? 0 : sessionListWidth)}
+          navigatorWidth={isOpenConnectorNavigation(navState)
+            ? 0
+            : isAutoCompact
+              ? sessionListWidth
+              : (effectiveSidebarAndNavigatorHidden ? 0 : sessionListWidth)}
           isSidebarAndNavigatorHidden={effectiveSidebarAndNavigatorHidden}
           isRightSidebarVisible={false}
           isCompact={isAutoCompact}
@@ -3406,7 +3356,7 @@ function AppShellContent({
         )}
 
         {/* Session List Resize Handle (absolute, hidden in focused mode) */}
-        {!effectiveSidebarAndNavigatorHidden && (
+        {!effectiveSidebarAndNavigatorHidden && !isOpenConnectorNavigation(navState) && (
         <div
           ref={sessionListHandleRef}
           onMouseDown={(e) => { e.preventDefault(); setIsResizing('session-list') }}

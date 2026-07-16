@@ -44,7 +44,7 @@ import SkillsMarketplaceDetailPage from '@/pages/SkillsMarketplaceDetailPage'
 import { getSettingsPageComponent } from '@/pages/settings/settings-pages'
 import { AutomationInfoPage } from '../automations/AutomationInfoPage'
 import ProjectInfoPage from '@/pages/ProjectInfoPage'
-import { OpenConnectorConsolePage } from '@/pages/openconnector/OpenConnectorConsolePage'
+import { OpenConnectorOfficialConsole } from '@/pages/openconnector/OpenConnectorOfficialConsole'
 import type { ExecutionEntry } from '../automations/types'
 import { automationsAtom } from '@/atoms/automations'
 import { SendResourceToWorkspaceDialog, type SendResourceType } from './SendResourceToWorkspaceDialog'
@@ -284,11 +284,11 @@ export function MainContentPanel({
     )
   }
 
-  // OpenConnector navigator - native runtime console surface
+  // OpenConnector navigator - official runtime-owned Web Console.
   if (isOpenConnectorNavigation(navState)) {
     return wrapWithStoplight(
       <Panel variant="grow" className={className}>
-        <OpenConnectorConsolePage section={navState.section} details={navState.details} />
+        <OpenConnectorOfficialConsole compensateForStoplight={isSidebarAndNavigatorHidden} />
       </Panel>
     )
   }

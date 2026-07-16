@@ -6,15 +6,12 @@ import {
 } from '../connectors/openconnector.ts';
 export {
   DEFAULT_OPENCONNECTOR_MCP_URL,
-  OPENCONNECTOR_PROVIDER_APPS,
   OPENCONNECTOR_TEMPLATE_ID,
   getOpenConnectorGuide,
-  inferOpenConnectorProviderIdsFromToolNames,
   isOpenConnectorGatewaySource,
   isOpenConnectorSource,
   normalizeOpenConnectorMcpUrl,
 } from '../connectors/openconnector.ts';
-export type { OpenConnectorProviderApp } from '../connectors/openconnector.ts';
 
 export type SourceTemplateSetupMode = 'local' | 'remote';
 

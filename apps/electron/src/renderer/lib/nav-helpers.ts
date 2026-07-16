@@ -27,8 +27,10 @@ export function isDetailNavState(navState: NavigationState | null): boolean {
       return navState.details !== null
     case 'settings':
       return navState.subpage !== null
-    case 'sources':
     case 'openconnector':
+      // OpenConnector is now the official full console, not a list/detail navigator.
+      return true
+    case 'sources':
     case 'skills':
     case 'automations':
     case 'projects':
