@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'bun:test'
 import {
-  classifyOpenConnectorOAuthSession,
   classifyOpenConnectorPopup,
   isSameOpenConnectorOrigin,
   normalizeOpenConnectorConsoleBounds,
@@ -38,35 +37,8 @@ describe('OpenConnector console policy', () => {
     expect(isSameOpenConnectorOrigin('https://oauth.example/authorize', 'https://openconnector.example')).toBe(false)
   })
 
-  it('selects a fresh session only for marked new-account OAuth URLs', () => {
-    expect(
-      classifyOpenConnectorOAuthSession(
-        'https://x.com/i/oauth2/authorize?state=opaque#oomol-connect-fresh-session',
-      ),
-    ).toBe('fresh')
-    expect(
-      classifyOpenConnectorOAuthSession(
-        'https://x.com/i/oauth2/authorize?state=opaque',
-        'oomol_connect_oauth_fresh',
-      ),
-    ).toBe('fresh')
-    expect(classifyOpenConnectorOAuthSession('https://x.com/i/oauth2/authorize?state=opaque')).toBe('persistent')
-    expect(
-      classifyOpenConnectorOAuthSession('javascript:alert(1)#oomol-connect-fresh-session', 'oomol_connect_oauth_fresh'),
-    ).toBe('persistent')
-  })
-
   it('only grants popup windows to the named OAuth flow', () => {
     expect(classifyOpenConnectorPopup('https://github.com/login/oauth/authorize', 'oomol_connect_oauth')).toBe('oauth-popup')
-    expect(
-      classifyOpenConnectorPopup(
-        'https://x.com/i/oauth2/authorize#oomol-connect-fresh-session',
-        'oomol_connect_oauth',
-      ),
-    ).toBe('oauth-popup')
-    expect(classifyOpenConnectorPopup('https://x.com/i/oauth2/authorize', 'oomol_connect_oauth_fresh')).toBe(
-      'oauth-popup',
-    )
     expect(classifyOpenConnectorPopup('https://docs.example/', '')).toBe('external')
     expect(classifyOpenConnectorPopup('javascript:alert(1)', 'oomol_connect_oauth')).toBe('blocked')
     expect(classifyOpenConnectorPopup('http://oauth.example/', 'oomol_connect_oauth')).toBe('blocked')

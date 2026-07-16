@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { BrowserWindow, WebContentsView, ipcMain, shell } from 'electron'
 import type { WebContents } from 'electron'
 import { mainLog } from './logger'
@@ -10,7 +9,6 @@ import {
   type OpenConnectorConsoleViewResult,
 } from '../shared/types'
 import {
-  classifyOpenConnectorOAuthSession,
   classifyOpenConnectorPopup,
   isSameOpenConnectorOrigin,
   normalizeOpenConnectorConsoleBounds,
@@ -168,11 +166,6 @@ export class OpenConnectorConsoleViewManager {
     view.webContents.setWindowOpenHandler((details) => {
       const disposition = classifyOpenConnectorPopup(details.url, details.frameName)
       if (disposition === 'oauth-popup') {
-        const sessionKind = classifyOpenConnectorOAuthSession(details.url, details.frameName)
-        mainLog.info('[openconnector-console] opening OAuth popup', {
-          authorizationHost: new URL(details.url).host,
-          sessionKind,
-        })
         return {
           action: 'allow',
           overrideBrowserWindowOptions: {
@@ -180,8 +173,7 @@ export class OpenConnectorConsoleViewManager {
             height: 720,
             autoHideMenuBar: true,
             webPreferences: {
-              partition:
-                sessionKind === 'fresh' ? `openconnector-oauth-${randomUUID()}` : CONSOLE_PARTITION,
+              partition: CONSOLE_PARTITION,
               sandbox: true,
               contextIsolation: true,
               nodeIntegration: false,

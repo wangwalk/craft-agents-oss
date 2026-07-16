@@ -11,12 +11,8 @@ export interface ResolvedOpenConnectorConsoleUrl {
 }
 
 export type OpenConnectorPopupDisposition = 'oauth-popup' | 'external' | 'blocked'
-export type OpenConnectorOAuthSessionKind = 'fresh' | 'persistent'
 
 const MAX_VIEW_DIMENSION = 20_000
-const OAUTH_POPUP_FRAME_NAME = 'oomol_connect_oauth'
-const FRESH_OAUTH_POPUP_FRAME_NAME = 'oomol_connect_oauth_fresh'
-const FRESH_OAUTH_SESSION_HASH = '#oomol-connect-fresh-session'
 
 export function resolveOpenConnectorConsoleUrl(value: unknown): ResolvedOpenConnectorConsoleUrl | null {
   if (typeof value !== 'string' || !value.trim()) return null
@@ -57,26 +53,13 @@ export function isSameOpenConnectorOrigin(value: string, allowedOrigin: string):
   }
 }
 
-export function classifyOpenConnectorOAuthSession(
-  value: string,
-  frameName = '',
-): OpenConnectorOAuthSessionKind {
-  const resolved = resolveExternalHttpUrl(value)
-  if (!resolved) return 'persistent'
-  return frameName === FRESH_OAUTH_POPUP_FRAME_NAME || resolved.hash === FRESH_OAUTH_SESSION_HASH
-    ? 'fresh'
-    : 'persistent'
-}
-
 export function classifyOpenConnectorPopup(
   value: string,
   frameName: string,
 ): OpenConnectorPopupDisposition {
   const resolved = resolveExternalHttpUrl(value)
   if (!resolved) return 'blocked'
-  return frameName === OAUTH_POPUP_FRAME_NAME || frameName === FRESH_OAUTH_POPUP_FRAME_NAME
-    ? 'oauth-popup'
-    : 'external'
+  return frameName === 'oomol_connect_oauth' ? 'oauth-popup' : 'external'
 }
 
 function resolveExternalHttpUrl(value: string): URL | null {
